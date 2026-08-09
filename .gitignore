@@ -1,0 +1,29 @@
+# 本地 IDE / Agent 配置，勿上传
+.claude/
+.cursor/
+.idea/
+.vscode/
+
+# 敏感配置（已迁至 %APPDATA%/ARCStudio/弧光自动汉化工具，此处兜底）
+mcbe_hub_config.json
+*.env
+.env*
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+
+# 构建产物
+build/
+dist/
+*.spec.bak
+
+# 工作区临时输出
+display_names_translation.txt
+display_names_translation.txt.orig
+identifier_display_name.txt
+monster_health.txt
