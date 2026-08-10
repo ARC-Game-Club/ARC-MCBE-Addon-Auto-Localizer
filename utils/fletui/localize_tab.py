@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""模组汉化页：格式化 + 语言 / display_name / 脚本 / 署名 / 可选图片。"""
+"""模组汉化页：格式化 + 语言 / display_name / 脚本 / 署名。"""
 from __future__ import annotations
 
 import threading
@@ -22,14 +22,12 @@ from ..lang_files import (
     parse_lang_content,
     rebuild_lang_lines,
 )
-from ..llm_service import translate_image_file, translate_lang_batch
+from ..llm_service import translate_lang_batch
 from ..pack_rename_service import sync_mod_pack_folder_names
 from ..script_localize_service import localize_scripts_in
 from ..text_utils import is_english_text
 from .base_tab import BaseTab
-from .components import SectionCard, confirm, error_toast
-
-IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
+from .components import SectionCard, error_toast
 
 
 class LocalizeTab(BaseTab):
@@ -37,11 +35,8 @@ class LocalizeTab(BaseTab):
 
     def __init__(self, page: ft.Page, config):
         super().__init__(page, config)
-        self._image_dirs: list[Path] = []
         self._format_ready = threading.Event()
         self.format_label = ft.Text("格式化: 进行中…", size=13)
-        self.img_hint = ft.Text("", size=12, color=ft.Colors.ON_SURFACE_VARIANT)
-        self.img_list = ft.ListView(height=140, spacing=4, padding=4)
         self.credit_btn: ft.FilledButton | None = None
         self.root.content = self.build()
         self.page.run_thread(self._auto_format_worker)
@@ -103,30 +98,16 @@ class LocalizeTab(BaseTab):
             ),
         )
 
-        img_card = SectionCard(
-            "⑤ 图片汉化（可选）— 点选含图片的目录",
-            ft.Row(
-                controls=[
-                    ft.OutlinedButton("刷新目录", icon=ft.Icons.REFRESH, on_click=lambda e: self._refresh_image_dirs()),
-                    self.img_hint,
-                ],
-                spacing=10,
-            ),
-            self.img_list,
-        )
-
-        self._refresh_image_dirs()
-
         body = ft.Column(
             controls=[
                 ft.Text(
-                    "进入本页后会自动规范化 JSON / JS。下方按步骤执行，或使用一键汉化。",
+                    "进入本页后会自动规范化 JSON / JS。下方按步骤执行，或使用一键汉化。"
+                    "图片汉化请到侧栏「图片汉化」页。",
                     size=13,
                     color=ft.Colors.ON_SURFACE_VARIANT,
                 ),
                 self.format_label,
                 steps,
-                img_card,
                 self.make_progress_row(),
             ],
             spacing=12,
@@ -325,80 +306,3 @@ class LocalizeTab(BaseTab):
             self._scripts_worker(bp)
         self._credit_worker(self._credit_name())
         self.log("一键汉化结束")
-
-    def _refresh_image_dirs(self) -> None:
-        self.img_list.controls.clear()
-        dirs = self._discover_image_dirs()
-        self._image_dirs = dirs
-        if not dirs:
-            self.img_list.controls.append(ft.Text("未找到含图片的子目录", color=ft.Colors.ON_SURFACE_VARIANT))
-            self.img_hint.value = ""
-        else:
-            self.img_hint.value = f"共 {len(dirs)} 个目录"
-            for d in dirs:
-                label = self._rel_label(d)
-                self.img_list.controls.append(
-                    ft.TextButton(
-                        label,
-                        icon=ft.Icons.IMAGE,
-                        on_click=lambda e, p=d: self._run_images(p),
-                        style=ft.ButtonStyle(alignment=ft.Alignment(-1, 0)),
-                    )
-                )
-        try:
-            self.img_list.update()
-            self.img_hint.update()
-        except Exception:
-            pass
-
-    def _rel_label(self, path: Path) -> str:
-        for _, pack in self._packs():
-            try:
-                return f"{pack.name} / {path.relative_to(pack)}"
-            except ValueError:
-                continue
-        return str(path)
-
-    def _discover_image_dirs(self) -> list[Path]:
-        found: dict[Path, int] = {}
-        for _, pack in self._packs():
-            for p in pack.rglob("*"):
-                if not p.is_file() or p.suffix.lower() not in IMAGE_EXTENSIONS:
-                    continue
-                if "_backup" in p.parts:
-                    continue
-                parent = p.parent
-                found[parent] = found.get(parent, 0) + 1
-        items = sorted(found.items(), key=lambda kv: (len(kv[0].parts), str(kv[0]).casefold()))
-        return [p for p, _n in items[:80]]
-
-    def _run_images(self, folder: Path) -> None:
-        if not self.config.get("image_llm", "api_key"):
-            error_toast(self.page, "请先在设置中填写图片翻译 API Key")
-            return
-        images = [
-            p for p in sorted(folder.iterdir())
-            if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS
-        ]
-        if not images:
-            error_toast(self.page, "该目录下没有图片文件")
-            return
-        confirm(
-            self.page,
-            title="确认",
-            message=f"翻译 {folder.name} 下 {len(images)} 张图片？",
-            on_yes=lambda: self.run_in_thread(self._images_worker, images),
-        )
-
-    def _images_worker(self, images: list[Path]) -> None:
-        total = len(images)
-        self.log("=" * 50)
-        self.log(f"图片汉化：{total} 张")
-        for n, path in enumerate(images, 1):
-            if self._stop_flag.is_set():
-                self.log("已停止")
-                break
-            self.log(f"[{n}/{total}] {path.name}")
-            translate_image_file(path, self.config.get("image_llm"), True, self.log)
-            self.set_progress(n, total)
-        self.log("图片汉化结束")

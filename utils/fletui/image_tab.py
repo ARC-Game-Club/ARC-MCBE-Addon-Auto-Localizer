@@ -1,0 +1,334 @@
+# -*- coding: utf-8 -*-
+"""图片汉化页：按目录预览、勾选后汉化，写回保持原分辨率。"""
+from __future__ import annotations
+
+from pathlib import Path
+
+import flet as ft
+
+from ..llm_service import translate_image_file
+from .base_tab import BaseTab
+from .components import confirm, error_toast, toast
+
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
+
+
+class ImageTab(BaseTab):
+    THUMB = 96
+
+    def __init__(self, page: ft.Page, config):
+        super().__init__(page, config)
+        self._folder_dirs: list[Path] = []
+        self._current_folder: Path | None = None
+        self._images: list[Path] = []
+        self._selected: set[Path] = set()
+        self._checks: dict[Path, ft.Checkbox] = {}
+
+        self.folder_hint = ft.Text("", size=12, color=ft.Colors.ON_SURFACE_VARIANT)
+        self.folder_list = ft.ListView(expand=True, spacing=2, padding=4)
+        self.gallery_hint = ft.Text("请选择左侧目录", size=13, color=ft.Colors.ON_SURFACE_VARIANT)
+        self.gallery = ft.GridView(
+            expand=True,
+            runs_count=4,
+            max_extent=150,
+            child_aspect_ratio=0.78,
+            spacing=8,
+            run_spacing=8,
+            padding=4,
+        )
+        self.translate_btn = ft.FilledButton(
+            "汉化选中图片",
+            icon=ft.Icons.TRANSLATE,
+            disabled=True,
+            on_click=lambda e: self._confirm_translate(),
+        )
+        self.root.content = self.build()
+        self.refresh_folders()
+
+    def _rp(self) -> Path | None:
+        p = Path(self.config.get("resource_pack_path").strip())
+        return p if str(p) and p.is_dir() else None
+
+    def _bp(self) -> Path | None:
+        p = Path(self.config.get("behavior_pack_path").strip())
+        return p if str(p) and p.is_dir() else None
+
+    def _packs(self) -> list[tuple[str, Path]]:
+        out = []
+        rp, bp = self._rp(), self._bp()
+        if rp:
+            out.append(("资源包", rp))
+        if bp:
+            out.append(("行为包", bp))
+        return out
+
+    def build(self) -> ft.Control:
+        folders_pane = ft.Container(
+            content=ft.Column(
+                controls=[
+                    ft.Row(
+                        controls=[
+                            ft.Text("图片目录", weight=ft.FontWeight.W_600, size=13, expand=True),
+                            ft.IconButton(
+                                icon=ft.Icons.REFRESH,
+                                tooltip="刷新目录",
+                                on_click=lambda e: self.refresh_folders(),
+                            ),
+                        ],
+                        spacing=0,
+                    ),
+                    self.folder_hint,
+                    ft.Container(
+                        content=self.folder_list,
+                        border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT),
+                        border_radius=8,
+                        expand=True,
+                    ),
+                ],
+                spacing=6,
+                expand=True,
+            ),
+            width=280,
+        )
+
+        gallery_pane = ft.Column(
+            controls=[
+                ft.Row(
+                    controls=[
+                        self.gallery_hint,
+                        ft.Container(expand=True),
+                        ft.TextButton("全选", on_click=lambda e: self._set_all(True)),
+                        ft.TextButton("全不选", on_click=lambda e: self._set_all(False)),
+                        self.translate_btn,
+                    ],
+                    spacing=6,
+                    wrap=True,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                ),
+                ft.Container(
+                    content=self.gallery,
+                    border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT),
+                    border_radius=8,
+                    expand=True,
+                    bgcolor=ft.Colors.SURFACE_CONTAINER_LOWEST,
+                ),
+            ],
+            spacing=8,
+            expand=True,
+        )
+
+        body = ft.Column(
+            controls=[
+                ft.Text(
+                    "预览各目录图片并勾选需要汉化的文件。"
+                    "写回时强制保持原图像素宽高（含异形比例）；原图备份到同目录 _backup/。",
+                    size=13,
+                    color=ft.Colors.ON_SURFACE_VARIANT,
+                ),
+                ft.Row(
+                    controls=[folders_pane, gallery_pane],
+                    spacing=12,
+                    expand=True,
+                    vertical_alignment=ft.CrossAxisAlignment.STRETCH,
+                ),
+                self.make_progress_row(),
+            ],
+            spacing=10,
+            expand=True,
+        )
+        return ft.Column(
+            controls=[body, self.make_log_panel()],
+            spacing=12,
+            expand=True,
+        )
+
+    def _rel_label(self, path: Path) -> str:
+        for _, pack in self._packs():
+            try:
+                return f"{pack.name} / {path.relative_to(pack)}"
+            except ValueError:
+                continue
+        return str(path)
+
+    def _discover_image_dirs(self) -> list[Path]:
+        found: dict[Path, int] = {}
+        for _, pack in self._packs():
+            for p in pack.rglob("*"):
+                if not p.is_file() or p.suffix.lower() not in IMAGE_EXTENSIONS:
+                    continue
+                if "_backup" in p.parts:
+                    continue
+                parent = p.parent
+                found[parent] = found.get(parent, 0) + 1
+        items = sorted(
+            found.items(),
+            key=lambda kv: (len(kv[0].parts), str(kv[0]).casefold()),
+        )
+        return [p for p, _n in items[:120]]
+
+    def refresh_folders(self) -> None:
+        self.folder_list.controls.clear()
+        self._folder_dirs = self._discover_image_dirs()
+        if not self._packs():
+            self.folder_hint.value = "当前模组没有可用包"
+            self.folder_list.controls.append(
+                ft.Text("请先在首屏选择模组", color=ft.Colors.ON_SURFACE_VARIANT)
+            )
+        elif not self._folder_dirs:
+            self.folder_hint.value = "未找到含图片的子目录"
+            self.folder_list.controls.append(
+                ft.Text("未找到图片目录", color=ft.Colors.ON_SURFACE_VARIANT)
+            )
+        else:
+            self.folder_hint.value = f"共 {len(self._folder_dirs)} 个目录"
+            for d in self._folder_dirs:
+                count = sum(
+                    1
+                    for p in d.iterdir()
+                    if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS
+                )
+                self.folder_list.controls.append(
+                    ft.ListTile(
+                        title=ft.Text(self._rel_label(d), size=12, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
+                        subtitle=ft.Text(f"{count} 张", size=11),
+                        on_click=lambda e, p=d: self.open_folder(p),
+                    )
+                )
+        # 若当前文件夹仍在列表中则刷新预览，否则清空
+        if self._current_folder and self._current_folder in self._folder_dirs:
+            self.open_folder(self._current_folder)
+        else:
+            self._current_folder = None
+            self._images = []
+            self._selected.clear()
+            self.gallery.controls.clear()
+            self.gallery_hint.value = "请选择左侧目录"
+            self._sync_translate_btn()
+        try:
+            self.folder_hint.update()
+            self.folder_list.update()
+            self.gallery.update()
+            self.gallery_hint.update()
+        except Exception:
+            pass
+
+    def _read_size_label(self, path: Path) -> str:
+        try:
+            from PIL import Image
+            with Image.open(path) as im:
+                return f"{im.size[0]}×{im.size[1]}"
+        except Exception:
+            return "?"
+
+    def open_folder(self, folder: Path) -> None:
+        self._current_folder = folder
+        self._images = sorted(
+            p
+            for p in folder.iterdir()
+            if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS
+        )
+        self._selected = set(self._images)
+        self._checks.clear()
+        self.gallery.controls.clear()
+        self.gallery_hint.value = f"{self._rel_label(folder)}  ·  {len(self._images)} 张"
+
+        for path in self._images:
+            cb = ft.Checkbox(
+                label=path.name,
+                value=True,
+                on_change=lambda e, p=path: self._on_check(p, e.control.value),
+            )
+            self._checks[path] = cb
+            size_label = self._read_size_label(path)
+            self.gallery.controls.append(
+                ft.Container(
+                    content=ft.Column(
+                        controls=[
+                            ft.Image(
+                                src=str(path),
+                                width=self.THUMB,
+                                height=self.THUMB,
+                                fit=ft.BoxFit.CONTAIN,
+                                gapless_playback=True,
+                            ),
+                            cb,
+                            ft.Text(size_label, size=10, color=ft.Colors.ON_SURFACE_VARIANT),
+                        ],
+                        spacing=4,
+                        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                        tight=True,
+                    ),
+                    padding=8,
+                    border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT),
+                    border_radius=8,
+                    bgcolor=ft.Colors.SURFACE,
+                )
+            )
+        self._sync_translate_btn()
+        try:
+            self.gallery_hint.update()
+            self.gallery.update()
+        except Exception:
+            pass
+
+    def _on_check(self, path: Path, checked: bool | None) -> None:
+        if checked:
+            self._selected.add(path)
+        else:
+            self._selected.discard(path)
+        self._sync_translate_btn()
+
+    def _set_all(self, checked: bool) -> None:
+        self._selected = set(self._images) if checked else set()
+        for path, cb in self._checks.items():
+            cb.value = checked
+            try:
+                cb.update()
+            except Exception:
+                pass
+        self._sync_translate_btn()
+
+    def _sync_translate_btn(self) -> None:
+        n = len(self._selected)
+        self.translate_btn.disabled = n == 0
+        self.translate_btn.text = f"汉化选中图片（{n}）"
+        try:
+            self.translate_btn.update()
+        except Exception:
+            pass
+
+    def _confirm_translate(self) -> None:
+        if not self.config.get("image_llm", "api_key"):
+            error_toast(self.page, "请先在设置中填写图片翻译 API Key")
+            return
+        images = [p for p in self._images if p in self._selected]
+        if not images:
+            error_toast(self.page, "请先勾选要汉化的图片")
+            return
+        confirm(
+            self.page,
+            title="确认图片汉化",
+            message=f"将汉化选中的 {len(images)} 张图片，并强制保持各自原分辨率。原图备份到 _backup/。",
+            on_yes=lambda: self.run_in_thread(self._images_worker, images),
+        )
+
+    def _images_worker(self, images: list[Path]) -> None:
+        total = len(images)
+        self.log("=" * 50)
+        self.log(f"图片汉化：选中 {total} 张（保持原分辨率）")
+        ok = 0
+        for n, path in enumerate(images, 1):
+            if self._stop_flag.is_set():
+                self.log("已停止")
+                break
+            self.log(f"[{n}/{total}] {path.name}")
+            if translate_image_file(path, self.config.get("image_llm"), True, self.log):
+                ok += 1
+            self.set_progress(n, total)
+        self.log(f"图片汉化结束：成功 {ok}/{total}")
+        if self._current_folder is not None:
+            try:
+                self.open_folder(self._current_folder)
+            except Exception:
+                pass
+        toast(self.page, f"图片汉化完成：成功 {ok}/{total}")

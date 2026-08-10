@@ -14,6 +14,7 @@ from ..hub_config import HubConfig
 from .achievement_tab import AchievementTab
 from .entity_tab import EntityTab
 from .export_tab import ExportTab
+from .image_tab import ImageTab
 from .localize_tab import LocalizeTab
 from .pbr_tab import PbrTab
 from .settings_view import SettingsView
@@ -22,6 +23,7 @@ from .welcome_view import WelcomeView
 
 NAV_ITEMS = [
     ("localize", "模组汉化", ft.Icons.TRANSLATE),
+    ("image", "图片汉化", ft.Icons.IMAGE),
     ("pbr", "灵动视效", ft.Icons.VISIBILITY),
     ("achievement", "成就兼容", ft.Icons.EMOJI_EVENTS),
     ("entity", "实体工具", ft.Icons.PETS),
@@ -144,6 +146,7 @@ class HubApp:
             self._tabs_pack_key = pack_key
             self._tabs = {
                 "localize": LocalizeTab(self.page, self.config),
+                "image": ImageTab(self.page, self.config),
                 "pbr": PbrTab(self.page, self.config),
                 "achievement": AchievementTab(self.page, self.config),
                 "entity": EntityTab(self.page, self.config),

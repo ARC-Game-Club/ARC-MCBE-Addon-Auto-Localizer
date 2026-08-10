@@ -48,9 +48,46 @@ LANG_TRANSLATE_PROMPT = """你是一名专业的 Minecraft 基岩版模组汉化
 """
 
 IMAGE_TRANSLATE_PROMPT = (
-    "保持图片格式和已有图案不变，汉化图片，将图片上的英文改为中文。"
+    "保持图片格式、画幅比例和已有图案不变，只将图上的英文改成简体中文。"
+    "输出图片的像素宽高必须与输入完全一致（不要裁剪、不要改画幅、不要缩放画布）。"
     "请直接返回汉化后的图片本身，不要附加任何文字说明。"
 )
+
+
+def _image_size(raw: bytes) -> tuple[int, int] | None:
+    try:
+        from PIL import Image
+        import io
+        with Image.open(io.BytesIO(raw)) as im:
+            return im.size
+    except Exception:
+        return None
+
+
+def _fit_image_bytes_to_size(data: bytes, width: int, height: int, log) -> bytes:
+    """把模型输出强制缩放到原图像素尺寸，尽量保留透明通道。"""
+    from PIL import Image
+    import io
+
+    with Image.open(io.BytesIO(data)) as im:
+        im.load()
+        if im.size == (width, height):
+            return data
+        log(f"  模型输出 {im.size[0]}×{im.size[1]}，已缩放回原分辨率 {width}×{height}")
+        # 游戏贴图多为像素风，用最近邻避免发糊
+        resized = im.resize((width, height), Image.Resampling.NEAREST)
+        fmt = (im.format or "PNG").upper()
+        if fmt not in {"PNG", "JPEG", "JPG", "WEBP", "BMP"}:
+            fmt = "PNG"
+        if fmt in {"JPG", "JPEG"} and resized.mode in ("RGBA", "P", "LA"):
+            resized = resized.convert("RGB")
+            fmt = "JPEG"
+        buf = io.BytesIO()
+        save_kw = {}
+        if fmt == "PNG":
+            save_kw["optimize"] = True
+        resized.save(buf, format="JPEG" if fmt == "JPG" else fmt, **save_kw)
+        return buf.getvalue()
 
 
 def make_client(llm_cfg):
@@ -116,27 +153,39 @@ def translate_text(text_llm_cfg, prompt, log) -> str:
 
 
 def translate_image_file(image_path: Path, image_llm_cfg, backup: bool, log) -> bool:
-    """调用图片 LLM 汉化单张图片，返回是否成功。"""
+    """调用图片 LLM 汉化单张图片，返回是否成功；写回时强制保持原分辨率。"""
     try:
-        import openai
+        import openai  # noqa: F401
     except ImportError:
         log("未安装 openai，请先执行: pip install openai")
         return False
 
     try:
         with open(image_path, "rb") as f:
-            b64 = base64.b64encode(f.read()).decode("utf-8")
+            raw = f.read()
+            b64 = base64.b64encode(raw).decode("utf-8")
     except OSError as e:
         log(f"读取图片失败: {e}")
         return False
 
+    orig_size = _image_size(raw)
     suffix = image_path.suffix.lower()
     mime = {
         ".png": "image/png",
         ".jpg": "image/jpeg",
         ".jpeg": "image/jpeg",
         ".webp": "image/webp",
+        ".bmp": "image/bmp",
     }.get(suffix, "image/png")
+
+    prompt = IMAGE_TRANSLATE_PROMPT
+    if orig_size:
+        w, h = orig_size
+        prompt = (
+            f"{IMAGE_TRANSLATE_PROMPT}"
+            f"输入图分辨率是 {w}×{h} 像素；输出也必须是 {w}×{h} 像素。"
+        )
+        log(f"  原图尺寸: {w}×{h}")
 
     try:
         client = make_client(image_llm_cfg)
@@ -147,7 +196,7 @@ def translate_image_file(image_path: Path, image_llm_cfg, backup: bool, log) -> 
                 "content": [
                     {"type": "image_url",
                      "image_url": {"url": f"data:{mime};base64,{b64}"}},
-                    {"type": "text", "text": IMAGE_TRANSLATE_PROMPT},
+                    {"type": "text", "text": prompt},
                 ],
             }],
         )
@@ -159,6 +208,13 @@ def translate_image_file(image_path: Path, image_llm_cfg, backup: bool, log) -> 
         resp, log, proxy=normalize_proxy(image_llm_cfg.get("proxy")))
     if data is None:
         return False
+
+    if orig_size:
+        try:
+            data = _fit_image_bytes_to_size(data, orig_size[0], orig_size[1], log)
+        except Exception as e:
+            log(f"  分辨率校正失败: {e}")
+            return False
 
     if backup:
         backup_dir = image_path.parent / "_backup"

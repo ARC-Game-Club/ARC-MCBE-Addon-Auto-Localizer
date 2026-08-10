@@ -192,19 +192,30 @@ def _interpolation_bodies(s: str) -> list[str]:
 
 
 def _is_simple_interpolation_body(body: str) -> bool:
-    """只允许标识符/属性链/简单下标，例如 name、player.name、items[0]。"""
+    """
+    允许安全插值表达式：
+    - cityInfo.name / items[0]
+    - Math.floor(pred.distance) / foo.bar(a, 10)
+    仍拒绝 .map/.join/箭头函数/嵌套模板/三元等。
+    """
     b = body.strip()
     if not b:
         return False
     for m in _COMPLEX_CODE_MARKERS:
         if m in b:
             return False
-    if any(tok in b for tok in ("(", "{", "`", "?", ":", ";", "=")):
+    if any(tok in b for tok in ("{", "`", "?", ":", ";", "=")):
         return False
-    # 允许 a.b.c / a[0] / a['x'] 太宽，这里禁止引号，只留 [数字]
-    if not re.fullmatch(r"[A-Za-z_$][\w.$]*(?:\[\d+\])?", b):
-        return False
-    return True
+    # 标识符 / 属性链 / 数字下标
+    member = r"[A-Za-z_$][\w.$]*(?:\[\d+\])?"
+    if re.fullmatch(member, b):
+        return True
+    # 单层函数/方法调用：Math.floor(pred.distance)、parseInt(x, 10)
+    arg = rf"(?:{member}|\d+)"
+    call = rf"{member}\(\s*(?:{arg}(?:\s*,\s*{arg})*)?\s*\)"
+    if re.fullmatch(call, b):
+        return True
+    return False
 
 
 def _looks_like_lang_key(s: str) -> bool:
