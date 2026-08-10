@@ -1,12 +1,32 @@
-# 弧光我的世界基岩 Addon 自动汉化器
+<div align="center">
 
-**版本：1.0.3**
+# ARC MCBE Addon Auto Localizer / 弧光我的世界基岩 Addon 自动汉化器
+
+[![Version](https://img.shields.io/badge/version-v1.0.3-blue)](https://github.com/ARC-Minecraft/ARC-MCBE-Addon-Auto-Localizer)
+[![Python](https://img.shields.io/badge/python-3.12+-blue?logo=python&logoColor=white)](https://www.python.org/)
+[![Flet](https://img.shields.io/badge/Flet-0.86-black)](https://flet.dev/)
+[![License](https://img.shields.io/github/license/ARC-Minecraft/ARC-MCBE-Addon-Auto-Localizer)](LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/ARC-Minecraft/ARC-MCBE-Addon-Auto-Localizer)](https://github.com/ARC-Minecraft/ARC-MCBE-Addon-Auto-Localizer/stargazers)
+
+</div>
+
+## 概述
 
 [ARC Minecraft](https://github.com/ARC-Minecraft) 出品的 Minecraft 基岩版（MCBE）Addon / 模组桌面汉化工具。自动扫描并配对资源包与行为包，借助 LLM 翻译语言文件、Display Name、脚本提示与图片文字，并提供灵动视效、成就兼容、实体工具与汉化包导出。
 
 仓库：[`ARC-MCBE-Addon-Auto-Localizer`](https://github.com/ARC-Minecraft/ARC-MCBE-Addon-Auto-Localizer)
 
 产品短名：**弧光自动汉化工具**
+
+## 作者信息
+
+- **作者**: [DEVILENMO](https://github.com/DEVILENMO)
+- **B 站**: [https://space.bilibili.com/37202522](https://space.bilibili.com/37202522)
+- **邮箱**: DEVILENMO@gmail.com
+- **组织**: [ARC Minecraft](https://github.com/ARC-Minecraft) / ARCStudio
+- **版本**: 1.0.3
+- **推荐 Python 版本**: 3.12+
+- **UI 框架**: Flet 0.86
 
 ---
 
@@ -111,7 +131,7 @@ pip install -r requirements.txt
 .\.venv\Scripts\python.exe mcbe_localization_hub.py
 ```
 
-首次启动 Flet 桌面客户端时可能需要下载运行时；网络不通时可配置系统 / 环境代理后重试。
+推荐 **Python 3.12+**。首次启动 Flet 桌面客户端时可能需要下载运行时；网络不通时可配置系统 / 环境代理后重试。
 
 ## 打包
 
@@ -119,10 +139,11 @@ pip install -r requirements.txt
 flet pack mcbe_localization_hub.py -n mcbe_localization_hub ^
   -i assets\app_icon.ico --add-data "assets;assets" ^
   --product-name "弧光自动汉化工具" --company-name "ARCStudio" ^
+  --product-version "1.0.3" --file-version "1.0.3" ^
   --hidden-import openai --hidden-import httpx -y
 ```
 
-产物在 `dist/`（已 gitignore）。正式版会通过 GitHub Release 发布可双击运行的 `exe`。
+请使用项目 `.venv`（勿用臃肿的全局 conda 环境），产物在 `dist/`（已 gitignore）。正式版通过 GitHub Release 发布可双击运行的 `exe`。
 
 ## 目录说明
 
@@ -135,6 +156,7 @@ flet pack mcbe_localization_hub.py -n mcbe_localization_hub ^
 | `assets/` | 图标等资源 |
 | `ui/` | 格式化等被 service 复用的辅助模块 |
 | `requirements.txt` | 依赖锁定 |
+| `LICENSE` | MIT |
 | `.venv/` | 本地虚拟环境（不上传） |
 
 ## 版本
@@ -167,4 +189,6 @@ flet pack mcbe_localization_hub.py -n mcbe_localization_hub ^
 
 ## 许可与归属
 
-ARC Minecraft / ARCStudio。Issues 与反馈请到本仓库提出。
+本项目采用 [MIT License](LICENSE)。
+
+主要作者 **DEVILENMO**（[B 站主页](https://space.bilibili.com/37202522)），归属 [ARC Minecraft](https://github.com/ARC-Minecraft) / ARCStudio。Issues 与反馈请到本仓库提出。
