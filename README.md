@@ -1,6 +1,6 @@
 # 弧光我的世界基岩 Addon 自动汉化器
 
-**版本：1.0.2**
+**版本：1.0.3**
 
 [ARC Minecraft](https://github.com/ARC-Minecraft) 出品的 Minecraft 基岩版（MCBE）Addon / 模组桌面汉化工具。自动扫描并配对资源包与行为包，借助 LLM 翻译语言文件、Display Name、脚本提示与图片文字，并提供灵动视效、成就兼容、实体工具与汉化包导出。
 
@@ -139,9 +139,13 @@ flet pack mcbe_localization_hub.py -n mcbe_localization_hub ^
 
 ## 版本
 
-当前版本：**1.0.2**
+当前版本：**1.0.3**
 
 ### 更新说明
+
+#### v1.0.3
+
+- **窗口图标**：打包后从 `sys._MEIPASS/assets` 正确加载 `app_icon.ico`，标题栏不再显示 Flet 默认鱼标
 
 #### v1.0.2
 

@@ -9,7 +9,7 @@ import flet as ft
 from .. import PROJECT_ROOT
 
 APP_TITLE = "弧光自动汉化工具"
-APP_VERSION = "1.0.2"
+APP_VERSION = "1.0.3"
 ICON_ASSET = "ARC汉化组.png"
 WINDOW_ICON_FILE = "app_icon.ico"
 
@@ -40,14 +40,26 @@ def brand_gradient() -> ft.LinearGradient:
 
 
 def resolve_window_icon() -> str | None:
-    """脚本运行时需 .ico 绝对路径；打包后也优先用同名 ico。"""
-    candidates = [
-        PROJECT_ROOT / "assets" / WINDOW_ICON_FILE,
-        Path.cwd() / "assets" / WINDOW_ICON_FILE,
-    ]
+    """窗口标题栏图标需 .ico 绝对路径；打包后在 sys._MEIPASS/assets。"""
+    import sys
+
+    candidates: list[Path] = []
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        candidates.append(Path(meipass) / "assets" / WINDOW_ICON_FILE)
+    candidates.extend(
+        [
+            PROJECT_ROOT / "assets" / WINDOW_ICON_FILE,
+            Path.cwd() / "assets" / WINDOW_ICON_FILE,
+            Path(__file__).resolve().parent.parent.parent / "assets" / WINDOW_ICON_FILE,
+        ]
+    )
     for p in candidates:
-        if p.is_file():
-            return str(p.resolve())
+        try:
+            if p.is_file():
+                return str(p.resolve())
+        except OSError:
+            continue
     return None
 
 
