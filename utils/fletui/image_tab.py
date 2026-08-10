@@ -2,6 +2,7 @@
 """图片汉化页：按目录预览、勾选后汉化，写回保持原分辨率。"""
 from __future__ import annotations
 
+import io
 from pathlib import Path
 
 import flet as ft
@@ -9,12 +10,13 @@ import flet as ft
 from ..llm_service import translate_image_file
 from .base_tab import BaseTab
 from .components import confirm, error_toast, toast
+from .theme import BRAND_PINK
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
 
 
 class ImageTab(BaseTab):
-    THUMB = 96
+    THUMB = 48
 
     def __init__(self, page: ft.Page, config):
         super().__init__(page, config)
@@ -23,18 +25,26 @@ class ImageTab(BaseTab):
         self._images: list[Path] = []
         self._selected: set[Path] = set()
         self._checks: dict[Path, ft.Checkbox] = {}
+        # (resolved_path_str, mtime_ns) -> PNG bytes
+        self._thumb_cache: dict[tuple[str, int], bytes] = {}
 
         self.folder_hint = ft.Text("", size=12, color=ft.Colors.ON_SURFACE_VARIANT)
         self.folder_list = ft.ListView(expand=True, spacing=2, padding=4)
-        self.gallery_hint = ft.Text("请选择左侧目录", size=13, color=ft.Colors.ON_SURFACE_VARIANT)
-        self.gallery = ft.GridView(
+        self.gallery_hint = ft.Text(
+            "请选择左侧目录",
+            size=13,
+            color=ft.Colors.ON_SURFACE_VARIANT,
             expand=True,
-            runs_count=4,
-            max_extent=150,
-            child_aspect_ratio=0.78,
-            spacing=8,
-            run_spacing=8,
-            padding=4,
+            max_lines=2,
+            overflow=ft.TextOverflow.ELLIPSIS,
+        )
+        self.gallery = ft.ListView(expand=True, spacing=2, padding=4)
+        self.gallery_host = ft.Container(
+            content=self.gallery,
+            border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT),
+            border_radius=8,
+            expand=True,
+            bgcolor=ft.Colors.SURFACE_CONTAINER_LOWEST,
         )
         self.translate_btn = ft.FilledButton(
             "汉化选中图片",
@@ -88,30 +98,23 @@ class ImageTab(BaseTab):
                 spacing=6,
                 expand=True,
             ),
-            width=280,
+            width=300,
         )
 
+        # 普通 Row：hint 自带 expand，切勿 wrap=True + expand（会触发 Flutter ErrorWidget 灰块）
         gallery_pane = ft.Column(
             controls=[
                 ft.Row(
                     controls=[
                         self.gallery_hint,
-                        ft.Container(expand=True),
                         ft.TextButton("全选", on_click=lambda e: self._set_all(True)),
                         ft.TextButton("全不选", on_click=lambda e: self._set_all(False)),
                         self.translate_btn,
                     ],
                     spacing=6,
-                    wrap=True,
                     vertical_alignment=ft.CrossAxisAlignment.CENTER,
                 ),
-                ft.Container(
-                    content=self.gallery,
-                    border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT),
-                    border_radius=8,
-                    expand=True,
-                    bgcolor=ft.Colors.SURFACE_CONTAINER_LOWEST,
-                ),
+                self.gallery_host,
             ],
             spacing=8,
             expand=True,
@@ -120,8 +123,8 @@ class ImageTab(BaseTab):
         body = ft.Column(
             controls=[
                 ft.Text(
-                    "预览各目录图片并勾选需要汉化的文件。"
-                    "写回时强制保持原图像素宽高（含异形比例）；原图备份到同目录 _backup/。",
+                    "左侧选目录，右侧勾选要汉化的图片（点整行也可切换）。"
+                    "写回强制保持原分辨率；原图备份到同目录 _backup/。",
                     size=13,
                     color=ft.Colors.ON_SURFACE_VARIANT,
                 ),
@@ -129,7 +132,6 @@ class ImageTab(BaseTab):
                     controls=[folders_pane, gallery_pane],
                     spacing=12,
                     expand=True,
-                    vertical_alignment=ft.CrossAxisAlignment.STRETCH,
                 ),
                 self.make_progress_row(),
             ],
@@ -150,6 +152,48 @@ class ImageTab(BaseTab):
                 continue
         return str(path)
 
+    def _thumb_bytes(self, path: Path) -> bytes | None:
+        """生成小缩略图 PNG 字节，按 path+mtime 内存缓存。"""
+        try:
+            key = (str(path.resolve()), path.stat().st_mtime_ns)
+        except OSError:
+            return None
+        cached = self._thumb_cache.get(key)
+        if cached is not None:
+            return cached
+        try:
+            from PIL import Image
+
+            with Image.open(path) as im:
+                im = im.convert("RGBA") if im.mode in ("P", "LA") else im
+                im.thumbnail((self.THUMB, self.THUMB))
+                buf = io.BytesIO()
+                im.save(buf, format="PNG")
+            data = buf.getvalue()
+            self._thumb_cache[key] = data
+            return data
+        except Exception as e:
+            self.log(f"  缩略图失败 {path.name}: {e}")
+            return None
+
+    def _is_likely_guidebook(self, folder: Path) -> bool:
+        """路径含 book/guide，或目录内图片名含 page → 通常需汉化。"""
+        for part in folder.parts:
+            low = part.casefold()
+            if "book" in low or "guide" in low:
+                return True
+        try:
+            for p in folder.iterdir():
+                if (
+                    p.is_file()
+                    and p.suffix.lower() in IMAGE_EXTENSIONS
+                    and "page" in p.name.casefold()
+                ):
+                    return True
+        except OSError:
+            pass
+        return False
+
     def _discover_image_dirs(self) -> list[Path]:
         found: dict[Path, int] = {}
         for _, pack in self._packs():
@@ -162,9 +206,23 @@ class ImageTab(BaseTab):
                 found[parent] = found.get(parent, 0) + 1
         items = sorted(
             found.items(),
-            key=lambda kv: (len(kv[0].parts), str(kv[0]).casefold()),
+            key=lambda kv: (
+                0 if self._is_likely_guidebook(kv[0]) else 1,
+                len(kv[0].parts),
+                str(kv[0]).casefold(),
+            ),
         )
         return [p for p, _n in items[:120]]
+
+    def _set_gallery(self, controls: list[ft.Control]) -> None:
+        self.gallery.controls = controls
+        try:
+            self.gallery.update()
+        except Exception:
+            try:
+                self.page.update()
+            except Exception:
+                pass
 
     def refresh_folders(self) -> None:
         self.folder_list.controls.clear()
@@ -180,34 +238,55 @@ class ImageTab(BaseTab):
                 ft.Text("未找到图片目录", color=ft.Colors.ON_SURFACE_VARIANT)
             )
         else:
-            self.folder_hint.value = f"共 {len(self._folder_dirs)} 个目录"
+            pinned = sum(1 for d in self._folder_dirs if self._is_likely_guidebook(d))
+            hint = f"共 {len(self._folder_dirs)} 个目录"
+            if pinned:
+                hint += f"（置顶建议汉化 {pinned} 个）"
+            self.folder_hint.value = hint
             for d in self._folder_dirs:
                 count = sum(
                     1
                     for p in d.iterdir()
                     if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS
                 )
-                self.folder_list.controls.append(
-                    ft.ListTile(
-                        title=ft.Text(self._rel_label(d), size=12, max_lines=2, overflow=ft.TextOverflow.ELLIPSIS),
+                likely = self._is_likely_guidebook(d)
+                if likely:
+                    tile = ft.ListTile(
+                        leading=ft.Icon(ft.Icons.MENU_BOOK, color=BRAND_PINK, size=22),
+                        title=ft.Text(
+                            self._rel_label(d),
+                            size=12,
+                            color=BRAND_PINK,
+                            weight=ft.FontWeight.W_600,
+                        ),
+                        subtitle=ft.Text(
+                            f"建议汉化 · {count} 张",
+                            size=11,
+                            color=BRAND_PINK,
+                        ),
+                        on_click=lambda e, p=d: self.open_folder(p),
+                    )
+                else:
+                    tile = ft.ListTile(
+                        title=ft.Text(self._rel_label(d), size=12),
                         subtitle=ft.Text(f"{count} 张", size=11),
                         on_click=lambda e, p=d: self.open_folder(p),
                     )
-                )
-        # 若当前文件夹仍在列表中则刷新预览，否则清空
+                self.folder_list.controls.append(tile)
         if self._current_folder and self._current_folder in self._folder_dirs:
             self.open_folder(self._current_folder)
         else:
             self._current_folder = None
             self._images = []
             self._selected.clear()
-            self.gallery.controls.clear()
             self.gallery_hint.value = "请选择左侧目录"
+            self._set_gallery(
+                [ft.Text("请选择左侧目录以预览图片", color=ft.Colors.ON_SURFACE_VARIANT, size=13)]
+            )
             self._sync_translate_btn()
         try:
             self.folder_hint.update()
             self.folder_list.update()
-            self.gallery.update()
             self.gallery_hint.update()
         except Exception:
             pass
@@ -215,61 +294,99 @@ class ImageTab(BaseTab):
     def _read_size_label(self, path: Path) -> str:
         try:
             from PIL import Image
+
             with Image.open(path) as im:
                 return f"{im.size[0]}×{im.size[1]}"
         except Exception:
             return "?"
 
-    def open_folder(self, folder: Path) -> None:
-        self._current_folder = folder
-        self._images = sorted(
-            p
-            for p in folder.iterdir()
-            if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS
+    def _make_row(self, path: Path) -> ft.Control:
+        size_label = self._read_size_label(path)
+        cb = ft.Checkbox(
+            value=path in self._selected,
+            on_change=lambda e, p=path: self._on_check(p, e.control.value),
         )
-        self._selected = set(self._images)
-        self._checks.clear()
-        self.gallery.controls.clear()
-        self.gallery_hint.value = f"{self._rel_label(folder)}  ·  {len(self._images)} 张"
+        self._checks[path] = cb
+        thumb = self._thumb_bytes(path)
+        if thumb:
+            leading: ft.Control = ft.Image(
+                src=thumb,
+                width=self.THUMB,
+                height=self.THUMB,
+                fit=ft.BoxFit.CONTAIN,
+                error_content=ft.Icon(
+                    ft.Icons.BROKEN_IMAGE_OUTLINED,
+                    size=24,
+                    color=ft.Colors.ON_SURFACE_VARIANT,
+                ),
+            )
+        else:
+            leading = ft.Icon(
+                ft.Icons.IMAGE_NOT_SUPPORTED_OUTLINED,
+                size=28,
+                color=ft.Colors.ON_SURFACE_VARIANT,
+            )
+        return ft.ListTile(
+            leading=leading,
+            title=ft.Text(path.name, size=13, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS),
+            subtitle=ft.Text(size_label, size=11, color=ft.Colors.ON_SURFACE_VARIANT),
+            trailing=cb,
+            on_click=lambda e, p=path: self._toggle_row(p),
+        )
 
-        for path in self._images:
-            cb = ft.Checkbox(
-                label=path.name,
-                value=True,
-                on_change=lambda e, p=path: self._on_check(p, e.control.value),
-            )
-            self._checks[path] = cb
-            size_label = self._read_size_label(path)
-            self.gallery.controls.append(
-                ft.Container(
-                    content=ft.Column(
-                        controls=[
-                            ft.Image(
-                                src=str(path),
-                                width=self.THUMB,
-                                height=self.THUMB,
-                                fit=ft.BoxFit.CONTAIN,
-                                gapless_playback=True,
-                            ),
-                            cb,
-                            ft.Text(size_label, size=10, color=ft.Colors.ON_SURFACE_VARIANT),
-                        ],
-                        spacing=4,
-                        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                        tight=True,
-                    ),
-                    padding=8,
-                    border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT),
-                    border_radius=8,
-                    bgcolor=ft.Colors.SURFACE,
-                )
-            )
-        self._sync_translate_btn()
+    def _toggle_row(self, path: Path) -> None:
+        checked = path not in self._selected
+        self._on_check(path, checked)
+        cb = self._checks.get(path)
+        if cb is not None:
+            cb.value = checked
+            try:
+                cb.update()
+            except Exception:
+                pass
+
+    def open_folder(self, folder: Path) -> None:
         try:
-            self.gallery_hint.update()
-            self.gallery.update()
-        except Exception:
-            pass
+            self._current_folder = folder
+            self._images = sorted(
+                p
+                for p in folder.iterdir()
+                if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS
+            )
+            self._selected = set(self._images)
+            self._checks.clear()
+            self.gallery_hint.value = f"{self._rel_label(folder)}  ·  {len(self._images)} 张"
+            try:
+                self.gallery_hint.update()
+            except Exception:
+                pass
+
+            if not self._images:
+                self._set_gallery(
+                    [ft.Text("该目录下没有图片", color=ft.Colors.ON_SURFACE_VARIANT, size=13)]
+                )
+                self._sync_translate_btn()
+                return
+
+            self.log(f"预览目录：{self._rel_label(folder)}（{len(self._images)} 张）")
+            rows: list[ft.Control] = []
+            for path in self._images:
+                try:
+                    rows.append(self._make_row(path))
+                except Exception as e:
+                    self.log(f"  预览项失败 {path.name}: {e}")
+                    rows.append(
+                        ft.Text(f"无法预览: {path.name} ({e})", color=ft.Colors.ERROR, size=12)
+                    )
+
+            self._set_gallery(rows)
+            self._sync_translate_btn()
+            self.log(f"已加载预览 {len(rows)} 项")
+        except Exception as e:
+            self.log(f"打开目录失败: {e}")
+            self._set_gallery(
+                [ft.Text(f"打开目录失败: {e}", color=ft.Colors.ERROR, size=13)]
+            )
 
     def _on_check(self, path: Path, checked: bool | None) -> None:
         if checked:

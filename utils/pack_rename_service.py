@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -204,24 +205,30 @@ def sync_mod_pack_folder_names(rp: Path | None, bp: Path | None, config, log) ->
     ok, errors = apply_pack_renames(changes)
     for err in errors:
         log(f"重命名失败: {err}")
-    if ok:
-        # 回写配置路径
-        if config is not None:
-            old_rp = config.get("resource_pack_path")
-            old_bp = config.get("behavior_pack_path")
-            new_rp = remap_path_after_rename(old_rp, changes)
-            new_bp = remap_path_after_rename(old_bp, changes)
-            if new_rp != old_rp:
-                config.set(new_rp, "resource_pack_path")
-            if new_bp != old_bp:
-                config.set(new_bp, "behavior_pack_path")
-            # 模组展示名：取第一个成功计划的 display_name（已含署名）
-            for plan in changes:
-                if plan.display_name:
-                    config.set(plan.display_name, "current_mod_name")
-                    break
-            config.save()
+    if ok and config is not None:
+        old_rp = config.get("resource_pack_path")
+        old_bp = config.get("behavior_pack_path")
+        new_rp = remap_path_after_rename(old_rp, changes)
+        new_bp = remap_path_after_rename(old_bp, changes)
+        # 无论字符串是否“看起来一样”，都写回（统一成绝对路径）
+        config.set(new_rp, "resource_pack_path")
+        config.set(new_bp, "behavior_pack_path")
+        for plan in changes:
+            if plan.display_name:
+                config.set(plan.display_name, "current_mod_name")
+                break
+        config.save()
+        if new_rp != (old_rp or "").strip() or new_bp != (old_bp or "").strip():
+            log(f"已更新配置路径")
+            if new_rp:
+                log(f"  RP → {new_rp}")
+            if new_bp:
+                log(f"  BP → {new_bp}")
+        else:
+            log("警告: 文件夹已改名，但配置路径未能映射到新目录（请返回首屏重选模组）")
         log(f"已按中文包名更新 {ok} 个文件夹")
+    elif ok:
+        log(f"已按中文包名更新 {ok} 个文件夹（无 config，跳过路径回写）")
     return ok
 
 
@@ -339,21 +346,31 @@ def apply_pack_renames(plans: list[RenamePlan]) -> tuple[int, list[str]]:
     return ok, errors
 
 
+def _path_key(path: Path | str) -> str:
+    """不依赖路径仍存在的稳定比较键（Windows 下忽略大小写）。"""
+    return os.path.normcase(os.path.abspath(str(path)))
+
+
 def remap_path_after_rename(path: str, plans: list[RenamePlan]) -> str:
-    """若当前选中路径被重命名，返回新路径。"""
+    """若当前选中路径被重命名，返回新路径（绝对路径字符串）。"""
     text = (path or "").strip()
     if not text:
         return text
     try:
-        current = Path(text).resolve()
+        current_key = _path_key(text)
     except OSError:
         return text
     for plan in plans:
-        if plan.skipped or not plan.changed:
+        if plan.skipped:
             continue
         try:
-            if current == plan.src.resolve():
-                return str(plan.dest)
+            if current_key != _path_key(plan.src):
+                continue
+            dest = plan.dest
+            try:
+                return str(dest.resolve()) if dest.exists() else str(Path(dest).absolute())
+            except OSError:
+                return str(dest)
         except OSError:
             continue
     return text

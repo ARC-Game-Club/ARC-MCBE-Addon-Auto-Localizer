@@ -144,8 +144,25 @@ class HubApp:
         # 同一模组再次进入工具箱时复用页签，避免重复跑进页自动规范化
         if not self._tabs or self._tabs_pack_key != pack_key:
             self._tabs_pack_key = pack_key
+
+            def on_pack_paths_changed() -> None:
+                """汉化后文件夹改名时：同步 pack_key、状态栏，并刷新图片目录列表。"""
+                self._tabs_pack_key = (
+                    self.config.get("resource_pack_path").strip(),
+                    self.config.get("behavior_pack_path").strip(),
+                )
+                self._update_status()
+                image_tab = self._tabs.get("image")
+                if image_tab is not None and hasattr(image_tab, "refresh_folders"):
+                    try:
+                        image_tab.refresh_folders()
+                    except Exception:
+                        pass
+
             self._tabs = {
-                "localize": LocalizeTab(self.page, self.config),
+                "localize": LocalizeTab(
+                    self.page, self.config, on_pack_paths_changed=on_pack_paths_changed
+                ),
                 "image": ImageTab(self.page, self.config),
                 "pbr": PbrTab(self.page, self.config),
                 "achievement": AchievementTab(self.page, self.config),

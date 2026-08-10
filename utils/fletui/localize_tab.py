@@ -33,8 +33,9 @@ from .components import SectionCard, error_toast
 class LocalizeTab(BaseTab):
     BATCH_SIZE = 50
 
-    def __init__(self, page: ft.Page, config):
+    def __init__(self, page: ft.Page, config, on_pack_paths_changed=None):
         super().__init__(page, config)
+        self._on_pack_paths_changed = on_pack_paths_changed
         self._format_ready = threading.Event()
         self.format_label = ft.Text("格式化: 进行中…", size=13)
         self.credit_btn: ft.FilledButton | None = None
@@ -180,7 +181,12 @@ class LocalizeTab(BaseTab):
 
     def _sync_folder_names(self) -> None:
         self.log("按中文包名同步文件夹 …")
-        sync_mod_pack_folder_names(self._rp(), self._bp(), self.config, self.log)
+        n = sync_mod_pack_folder_names(self._rp(), self._bp(), self.config, self.log)
+        if n and self._on_pack_paths_changed is not None:
+            try:
+                self._on_pack_paths_changed()
+            except Exception as e:
+                self.log(f"刷新界面路径失败: {e}")
 
     def _translate_zh_lang(self, zh: Path) -> None:
         orig_text = zh.read_text(encoding="utf-8")
