@@ -27,7 +27,7 @@ class WelcomeView:
         hero = ft.Container(
             content=ft.Text(
                 "选择要处理的模组（资源包与行为包若互相依赖会合并为一个入口；"
-                "整理名称时优先使用 zh_CN 中文包名）",
+                "整理名称时优先使用设置中的目标语言包名）",
                 size=14,
                 color=ft.Colors.WHITE,
             ),
@@ -78,7 +78,8 @@ class WelcomeView:
             self.count_label.update()
             return
         try:
-            self._mods = list_mods(base)
+            target = (self.config.get("target_language") or "zh_CN").strip() or "zh_CN"
+            self._mods = list_mods(base, target_code=target)
         except OSError as exc:
             self.count_label.value = f"扫描失败: {exc}"
             self.count_label.color = ft.Colors.ERROR
@@ -168,7 +169,8 @@ class WelcomeView:
             error_toast(self.page, f"未找到 Minecraft 路径:\n{base}")
             return
         try:
-            plans = plan_pack_renames(base)
+            target = (self.config.get("target_language") or "zh_CN").strip() or "zh_CN"
+            plans = plan_pack_renames(base, target_code=target)
         except OSError as exc:
             error_toast(self.page, f"扫描失败: {exc}")
             return
@@ -194,7 +196,7 @@ class WelcomeView:
                 controls=[
                     ft.Text(
                         f"将重命名 {len(changes)} 个文件夹（跳过 {len(skipped)} 个）。"
-                        "优先使用 zh_CN 中文包名；行为包加 BP，资源包加 RP。"
+                        "优先使用设置中的目标语言包名；行为包加 BP，资源包加 RP。"
                     ),
                     ft.Container(
                         content=ft.Text(preview, font_family="Consolas", size=12, selectable=True),

@@ -32,15 +32,15 @@ def _httpx_client(proxy_url: str):
     except TypeError:
         return httpx.Client(proxies=proxy_url)
 
-LANG_TRANSLATE_PROMPT = """你是一名专业的 Minecraft 基岩版模组汉化专家。
-请将下面的 .lang 语言文件内容翻译为简体中文。
+LANG_TRANSLATE_PROMPT = """你是一名专业的 Minecraft 基岩版模组本地化专家。
+请将下面的 .lang 语言文件内容翻译为{lang_label}。
 
 规则：
-1. 保持每行格式为 键=翻译后的中文值，一行一条，行数与输入完全一致
+1. 保持每行格式为 键=翻译后的值，一行一条，行数与输入完全一致
 2. 只翻译等号右边的文字，等号左边的键原样保留
 3. 保留 %s、%1、§c、\\n 等占位符、格式代码、颜色代码完全不变
-4. 实体名、物品名、技能名使用游戏内通用中文译名
-5. 如果值已经是中文或纯符号，保持不变
+4. 实体名、物品名、技能名使用游戏内通用的{lang_label}译名
+5. 如果值已经是{lang_label}或纯符号，保持不变
 6. 不要输出任何解释、前言、结尾，只输出翻译后的行
 
 待翻译内容：
@@ -48,9 +48,9 @@ LANG_TRANSLATE_PROMPT = """你是一名专业的 Minecraft 基岩版模组汉化
 """
 
 IMAGE_TRANSLATE_PROMPT = (
-    "保持图片格式、画幅比例和已有图案不变，只将图上的英文改成简体中文。"
+    "保持图片格式、画幅比例和已有图案不变，只将图上的英文改成{lang_label}。"
     "输出图片的像素宽高必须与输入完全一致（不要裁剪、不要改画幅、不要缩放画布）。"
-    "请直接返回汉化后的图片本身，不要附加任何文字说明。"
+    "请直接返回本地化后的图片本身，不要附加任何文字说明。"
 )
 
 
@@ -103,13 +103,13 @@ def make_client(llm_cfg):
     return openai.OpenAI(**kwargs)
 
 
-def translate_lang_batch(entries, llm_cfg, log) -> dict:
+def translate_lang_batch(entries, llm_cfg, log, lang_label: str = "简体中文") -> dict:
     """
     翻译一批 [(key, value)]，返回 {key: translated}。
     失败时保留原值，不中断整体流程。
     """
     batch_text = "\n".join(f"{k}={v}" for k, v in entries)
-    prompt = LANG_TRANSLATE_PROMPT.format(batch=batch_text)
+    prompt = LANG_TRANSLATE_PROMPT.format(batch=batch_text, lang_label=lang_label)
     result = {}
     try:
         client = make_client(llm_cfg)
@@ -152,8 +152,14 @@ def translate_text(text_llm_cfg, prompt, log) -> str:
         raise
 
 
-def translate_image_file(image_path: Path, image_llm_cfg, backup: bool, log) -> bool:
-    """调用图片 LLM 汉化单张图片，返回是否成功；写回时强制保持原分辨率。"""
+def translate_image_file(
+    image_path: Path,
+    image_llm_cfg,
+    backup: bool,
+    log,
+    lang_label: str = "简体中文",
+) -> bool:
+    """调用图片 LLM 本地化单张图片，返回是否成功；写回时强制保持原分辨率。"""
     try:
         import openai  # noqa: F401
     except ImportError:
@@ -178,11 +184,12 @@ def translate_image_file(image_path: Path, image_llm_cfg, backup: bool, log) -> 
         ".bmp": "image/bmp",
     }.get(suffix, "image/png")
 
-    prompt = IMAGE_TRANSLATE_PROMPT
+    base_prompt = IMAGE_TRANSLATE_PROMPT.format(lang_label=lang_label)
+    prompt = base_prompt
     if orig_size:
         w, h = orig_size
         prompt = (
-            f"{IMAGE_TRANSLATE_PROMPT}"
+            f"{base_prompt}"
             f"输入图分辨率是 {w}×{h} 像素；输出也必须是 {w}×{h} 像素。"
         )
         log(f"  原图尺寸: {w}×{h}")

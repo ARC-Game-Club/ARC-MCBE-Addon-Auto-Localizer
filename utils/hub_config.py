@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """全局配置管理：读取、写入并深度合并默认值。
 
-配置存放在用户 AppData（%APPDATA%/ARCStudio/弧光自动汉化工具），
+配置存放在用户 AppData（%APPDATA%/ARCStudio/弧光自动本地化工具），
 不写入仓库，避免 API Key 等敏感信息被提交。
 """
 import copy
@@ -10,7 +10,8 @@ import shutil
 from pathlib import Path
 
 from . import PROJECT_ROOT
-from .paths import get_app_data_dir
+from .languages import DEFAULT_CODE
+from .paths import get_app_data_dir, get_legacy_app_data_dirs
 
 CONFIG_FILE = get_app_data_dir() / "config.json"
 # 旧版曾把配置放在仓库根目录，启动时若发现则迁走并删除
@@ -21,6 +22,7 @@ DEFAULT_CONFIG = {
     "behavior_pack_path": "",
     "current_mod_name": "",
     "translator_credit": "DEVILENMO",
+    "target_language": DEFAULT_CODE,
     "export_dir": "",
     "text_llm": {
         "base_url": "https://api.openai.com/v1",
@@ -34,17 +36,29 @@ DEFAULT_CONFIG = {
         "model": "nano-banana-2-lite",
         "proxy": "127.0.0.1:7890",
     },
+    "cloud_drives": {},
 }
 
 
 def _migrate_legacy_config(dest: Path) -> None:
-    """把仓库根目录的旧配置迁到 AppData，成功后删除旧文件。"""
-    if dest.exists() or not _LEGACY_CONFIG_FILE.is_file():
+    """把仓库根目录或旧 AppData 目录的配置迁到新位置。"""
+    if dest.exists():
         return
+    candidates: list[Path] = []
+    if _LEGACY_CONFIG_FILE.is_file():
+        candidates.append(_LEGACY_CONFIG_FILE)
+    for legacy_dir in get_legacy_app_data_dirs():
+        legacy_cfg = legacy_dir / "config.json"
+        if legacy_cfg.is_file():
+            candidates.append(legacy_cfg)
+    if not candidates:
+        return
+    src = candidates[0]
     try:
         dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(_LEGACY_CONFIG_FILE, dest)
-        _LEGACY_CONFIG_FILE.unlink(missing_ok=True)
+        shutil.copy2(src, dest)
+        if src == _LEGACY_CONFIG_FILE:
+            _LEGACY_CONFIG_FILE.unlink(missing_ok=True)
     except OSError:
         pass
 
@@ -69,6 +83,12 @@ class HubConfig:
             pass
         if not str(self._data.get("translator_credit") or "").strip():
             self._data["translator_credit"] = "DEVILENMO"
+        code = str(self._data.get("target_language") or "").strip()
+        if not code:
+            self._data["target_language"] = DEFAULT_CODE
+        self._migrate_baidu_pan()
+        from .cloud_drives import apply_defaults
+        apply_defaults(self._data)
 
     def save(self):
         try:
@@ -84,6 +104,26 @@ class HubConfig:
         for k in keys:
             d = d[k]
         return d
+
+    def _migrate_baidu_pan(self) -> None:
+        """旧版 baidu_pan 迁到 cloud_drives.baidu。"""
+        old = self._data.get("baidu_pan")
+        if not isinstance(old, dict):
+            return
+        drives = self._data.setdefault("cloud_drives", {})
+        if not isinstance(drives, dict):
+            drives = {}
+            self._data["cloud_drives"] = drives
+        baidu = drives.setdefault("baidu", {})
+        if not isinstance(baidu, dict):
+            baidu = {}
+            drives["baidu"] = baidu
+        for key, value in old.items():
+            current = baidu.get(key)
+            if key not in baidu or current in ("", 0, None):
+                if value not in ("", None):
+                    baidu[key] = value
+        self._data.pop("baidu_pan", None)
 
     def set(self, value, *keys):
         d = self._data

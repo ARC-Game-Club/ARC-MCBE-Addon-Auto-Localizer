@@ -71,25 +71,35 @@ def _read_lang_key(lang_file: Path, key: str) -> str | None:
     return None
 
 
-def _lookup_lang_value(texts_dir: Path, key: str) -> str | None:
-    """读取语言文件中的 key；优先 zh_CN，再按 languages.json / 其它 .lang。"""
-    # 1) 中文优先
-    for zh_name in ("zh_CN.lang", "zh_cn.lang"):
-        value = _read_lang_key(texts_dir / zh_name, key)
+def _lookup_lang_value(
+    texts_dir: Path, key: str, target_code: str | None = None
+) -> str | None:
+    """读取语言文件中的 key；优先目标语言，再按 languages.json / 其它 .lang。"""
+    from .languages import DEFAULT_CODE
+
+    code = (target_code or DEFAULT_CODE).strip() or DEFAULT_CODE
+    # 1) 目标语言优先
+    preferred = [f"{code}.lang"]
+    if code == "zh_CN":
+        preferred.append("zh_cn.lang")
+    seen: set[Path] = set()
+    for name in preferred:
+        lang_file = texts_dir / name
+        seen.add(lang_file)
+        value = _read_lang_key(lang_file, key)
         if value:
             return value
 
-    # 2) languages.json 顺序（跳过已试过的 zh_CN）
-    seen = {texts_dir / "zh_CN.lang", texts_dir / "zh_cn.lang"}
+    # 2) languages.json 顺序
     langs_path = texts_dir / "languages.json"
     if langs_path.is_file():
         langs = _read_json(langs_path)
         if isinstance(langs, list):
             for item in langs:
-                code = str(item).strip()
-                if not code:
+                item_code = str(item).strip()
+                if not item_code:
                     continue
-                lang_file = texts_dir / f"{code}.lang"
+                lang_file = texts_dir / f"{item_code}.lang"
                 if lang_file in seen:
                     continue
                 seen.add(lang_file)
@@ -107,15 +117,17 @@ def _lookup_lang_value(texts_dir: Path, key: str) -> str | None:
     return None
 
 
-def resolve_pack_display_name(pack_dir: Path) -> tuple[str | None, str]:
+def resolve_pack_display_name(
+    pack_dir: Path, target_code: str | None = None
+) -> tuple[str | None, str]:
     """
-    从包目录解析展示名（中文优先）。
-    优先级：zh_CN.lang pack.name → 其它 .lang pack.name → manifest.header.name
+    从包目录解析展示名（目标语言优先）。
+    优先级：目标语言 .lang pack.name → 其它 .lang pack.name → manifest.header.name
     返回 (name, error)；成功时 error 为空字符串。
     """
     texts_dir = pack_dir / "texts"
     if texts_dir.is_dir():
-        resolved = _lookup_lang_value(texts_dir, "pack.name")
+        resolved = _lookup_lang_value(texts_dir, "pack.name", target_code)
         if resolved:
             return resolved, ""
 
@@ -144,7 +156,9 @@ def infer_pack_suffix(pack_dir: Path) -> str | None:
     return None
 
 
-def plan_rename_for_pack(pack_dir: Path) -> RenamePlan:
+def plan_rename_for_pack(
+    pack_dir: Path, target_code: str | None = None
+) -> RenamePlan:
     """为单个包目录生成重命名计划。"""
     pack_dir = Path(pack_dir)
     suffix = infer_pack_suffix(pack_dir)
@@ -157,7 +171,7 @@ def plan_rename_for_pack(pack_dir: Path) -> RenamePlan:
             skipped=True,
             reason="不在标准包目录下",
         )
-    display, err = resolve_pack_display_name(pack_dir)
+    display, err = resolve_pack_display_name(pack_dir, target_code)
     if err:
         return RenamePlan(
             src=pack_dir,
@@ -180,16 +194,24 @@ def plan_rename_for_pack(pack_dir: Path) -> RenamePlan:
 
 def sync_mod_pack_folder_names(rp: Path | None, bp: Path | None, config, log) -> int:
     """
-    按当前（优先中文）包名重命名 RP/BP 文件夹，并回写 config 路径与模组名。
+    按当前（优先目标语言）包名重命名 RP/BP 文件夹，并回写 config 路径与模组名。
     返回成功重命名个数。
     """
+    from .languages import DEFAULT_CODE
+
+    target_code = DEFAULT_CODE
+    if config is not None:
+        try:
+            target_code = (config.get("target_language") or DEFAULT_CODE).strip() or DEFAULT_CODE
+        except Exception:
+            target_code = DEFAULT_CODE
     plans = []
     for path in (rp, bp):
         if path is None:
             continue
         p = Path(path)
         if p.is_dir():
-            plans.append(plan_rename_for_pack(p))
+            plans.append(plan_rename_for_pack(p, target_code))
     changes = [p for p in plans if (not p.skipped) and p.changed]
     if not changes:
         if plans and all(p.skipped for p in plans):
@@ -226,9 +248,9 @@ def sync_mod_pack_folder_names(rp: Path | None, bp: Path | None, config, log) ->
                 log(f"  BP → {new_bp}")
         else:
             log("警告: 文件夹已改名，但配置路径未能映射到新目录（请返回首屏重选模组）")
-        log(f"已按中文包名更新 {ok} 个文件夹")
+        log(f"已按本地化包名更新 {ok} 个文件夹")
     elif ok:
-        log(f"已按中文包名更新 {ok} 个文件夹（无 config，跳过路径回写）")
+        log(f"已按本地化包名更新 {ok} 个文件夹（无 config，跳过路径回写）")
     return ok
 
 
@@ -267,14 +289,16 @@ def _unique_dest(parent: Path, folder_name: str, src: Path) -> Path:
         index += 1
 
 
-def plan_pack_renames(base_dir: Path | None = None) -> list[RenamePlan]:
+def plan_pack_renames(
+    base_dir: Path | None = None, target_code: str | None = None
+) -> list[RenamePlan]:
     """扫描标准包目录，生成重命名计划。"""
     plans: list[RenamePlan] = []
     for root, suffix in get_pack_roots(base_dir):
         for pack_dir in sorted(root.iterdir(), key=lambda p: p.name.lower()):
             if not pack_dir.is_dir():
                 continue
-            display, err = resolve_pack_display_name(pack_dir)
+            display, err = resolve_pack_display_name(pack_dir, target_code)
             if err:
                 plans.append(
                     RenamePlan(

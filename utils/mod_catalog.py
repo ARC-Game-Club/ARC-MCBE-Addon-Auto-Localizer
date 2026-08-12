@@ -82,7 +82,9 @@ def _base_name(name: str) -> str:
     return _SUFFIX_RE.sub("", name).strip().casefold()
 
 
-def scan_packs(base_dir: Path | None = None) -> list[PackInfo]:
+def scan_packs(
+    base_dir: Path | None = None, target_code: str | None = None
+) -> list[PackInfo]:
     """扫描四个标准包目录，返回所有可读 manifest 的包。"""
     packs: list[PackInfo] = []
     for root, kind in get_pack_roots(base_dir):
@@ -99,7 +101,7 @@ def scan_packs(base_dir: Path | None = None) -> list[PackInfo]:
             uid = header.get("uuid")
             if not isinstance(uid, str) or not uid.strip():
                 continue
-            display, _err = resolve_pack_display_name(child)
+            display, _err = resolve_pack_display_name(child, target_code)
             packs.append(
                 PackInfo(
                     path=child,
@@ -201,9 +203,11 @@ def _merge_name_pairs(
     return kept
 
 
-def list_mods(base_dir: Path | None = None) -> list[ModEntry]:
+def list_mods(
+    base_dir: Path | None = None, target_code: str | None = None
+) -> list[ModEntry]:
     """返回逻辑模组列表（已按依赖 / 同名配对）。"""
-    packs = scan_packs(base_dir)
+    packs = scan_packs(base_dir, target_code=target_code)
     pairs = _merge_name_pairs(_pair_by_uuid(packs))
     mods: list[ModEntry] = []
     for rp, bp in pairs:

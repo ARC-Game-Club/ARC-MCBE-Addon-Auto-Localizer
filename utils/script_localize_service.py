@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""行为包脚本提示字符串汉化。
+"""行为包脚本提示字符串本地化。
 
 针对 sendMessage / form.title|button|label|body|toggle|… / setActionBar|setTitle|setSubtitle
 以及选项里的 tooltip/placeholderText 等字符串字面量，调用 LLM 只改提示文字，
@@ -12,7 +12,7 @@ import re
 from pathlib import Path
 
 from .llm_service import translate_text
-from .text_utils import is_english_text
+from .text_utils import needs_translation
 
 SCRIPT_EXTENSIONS = {".js", ".ts", ".mjs", ".cjs"}
 
@@ -47,14 +47,14 @@ _COMPLEX_CODE_MARKERS = (
     "\r",
 )
 
-SCRIPT_TRANSLATE_PROMPT = """你是 Minecraft 基岩版模组脚本汉化专家。
-下面是从 JS/TS 脚本中提取的玩家可见提示字符串（JSON 数组），请译为简体中文。
+SCRIPT_TRANSLATE_PROMPT = """你是 Minecraft 基岩版模组脚本本地化专家。
+下面是从 JS/TS 脚本中提取的玩家可见提示字符串（JSON 数组），请译为{lang_label}。
 
 规则：
 1. 只翻译人类可读文字；不要改动代码结构
 2. 完整保留 § 及后续格式/颜色码（如 §c、§l、§r）、\\n、\\t
 3. 完整保留 ${...} 模板插值、%s、%1$s、{{...}} 等占位符，位置与内容都不要改
-4. 已是中文或纯符号的保持原样
+4. 已是{lang_label}或纯符号的保持原样
 5. 只返回 JSON 数组，每项格式 {"id":"S0000","text":"译文"}，id 与输入一致，不要其它说明
 
 待翻译：
@@ -226,7 +226,7 @@ def _looks_like_lang_key(s: str) -> bool:
     return bool(_LANG_KEY_RE.fullmatch(t))
 
 
-def _should_translate(s: str) -> bool:
+def _should_translate(s: str, target_code: str | None = None) -> bool:
     s = s.strip()
     if len(s) < 2:
         return False
@@ -238,17 +238,17 @@ def _should_translate(s: str) -> bool:
         return False
     if _looks_like_lang_key(s):
         return False
-    if not is_english_text(s):
+    if not needs_translation(s, target_code):
         return False
     return True
 
 
-def _is_safe_tip_string(s: str) -> bool:
+def _is_safe_tip_string(s: str, target_code: str | None = None) -> bool:
     """
     可安全送去翻译的提示串。
     多行、嵌套反引号、或 ${} 内含 map/join/箭头函数等代码表达式 → 跳过。
     """
-    if not _should_translate(s):
+    if not _should_translate(s, target_code):
         return False
     # 多行：旧行协议会截断；即便改 JSON 也常是「文案+代码」混合，风险高
     if "\n" in s or "\r" in s:
@@ -266,7 +266,9 @@ def _is_safe_tip_string(s: str) -> bool:
     return True
 
 
-def extract_tip_strings(source: str) -> list[tuple[int, int, str]]:
+def extract_tip_strings(
+    source: str, target_code: str | None = None
+) -> list[tuple[int, int, str]]:
     """
     提取脚本中提示调用的首个字符串实参，以及 tooltip 等选项字段。
     返回 [(内容起始, 内容结束, 原文内容), ...]，按出现顺序；同位置不重复。
@@ -278,7 +280,7 @@ def extract_tip_strings(source: str) -> list[tuple[int, int, str]]:
         key = (c0, c1)
         if key in seen_spans:
             return
-        if not _is_safe_tip_string(content):
+        if not _is_safe_tip_string(content, target_code):
             return
         seen_spans.add(key)
         hits.append((c0, c1, content))
@@ -356,7 +358,9 @@ def _replacement_looks_safe(original: str, new: str) -> bool:
     return True
 
 
-def translate_script_strings_batch(strings: list[str], llm_cfg, log) -> dict[str, str]:
+def translate_script_strings_batch(
+    strings: list[str], llm_cfg, log, lang_label: str = "简体中文"
+) -> dict[str, str]:
     """翻译去重后的字符串列表，返回 {原文: 译文}。"""
     unique = []
     seen = set()
@@ -369,10 +373,11 @@ def translate_script_strings_batch(strings: list[str], llm_cfg, log) -> dict[str
 
     mapping: dict[str, str] = {}
     batch_size = 30
+    template = SCRIPT_TRANSLATE_PROMPT.replace("{lang_label}", lang_label)
     for i in range(0, len(unique), batch_size):
         batch = unique[i : i + batch_size]
         payload = [{"id": f"S{n:04d}", "text": s} for n, s in enumerate(batch)]
-        prompt = SCRIPT_TRANSLATE_PROMPT.replace(
+        prompt = template.replace(
             "__BATCH__", json.dumps(payload, ensure_ascii=False, indent=2)
         )
         try:
@@ -501,9 +506,15 @@ def validate_script_source(source: str, suffix: str) -> tuple[bool, str]:
     return _structural_check(source)
 
 
-def localize_scripts_in(root: Path, llm_cfg, log) -> tuple[int, int, int, int]:
+def localize_scripts_in(
+    root: Path,
+    llm_cfg,
+    log,
+    lang_label: str = "简体中文",
+    target_code: str | None = None,
+) -> tuple[int, int, int, int]:
     """
-    汉化目录下脚本提示字符串。
+    本地化目录下脚本提示字符串。
     返回 (扫描文件数, 待译字符串出现次数, 写入成功数, 校验失败回滚数)。
     """
     root = Path(root)
@@ -520,7 +531,7 @@ def localize_scripts_in(root: Path, llm_cfg, log) -> tuple[int, int, int, int]:
         except (OSError, UnicodeError) as e:
             log(f"  跳过 {fp.name}: {e}")
             continue
-        spans = extract_tip_strings(text)
+        spans = extract_tip_strings(text, target_code)
         if not spans:
             continue
         all_spans.append((fp, spans, text))
@@ -531,7 +542,9 @@ def localize_scripts_in(root: Path, llm_cfg, log) -> tuple[int, int, int, int]:
     if total_hits == 0:
         return len(files), 0, 0, 0
 
-    mapping = translate_script_strings_batch(all_strings, llm_cfg, log)
+    mapping = translate_script_strings_batch(
+        all_strings, llm_cfg, log, lang_label=lang_label
+    )
     written = 0
     rolled_back = 0
     for fp, spans, text in all_spans:
@@ -543,14 +556,14 @@ def localize_scripts_in(root: Path, llm_cfg, log) -> tuple[int, int, int, int]:
         new_ok, new_err = validate_script_source(new_text, fp.suffix)
         if old_ok and not new_ok:
             rolled_back += 1
-            log(f"  ✗ 汉化失败已回退: {rel}")
+            log(f"  ✗ 本地化失败已回退: {rel}")
             log(f"    原因: {new_err}")
             continue
         if not old_ok and not new_ok:
             struct_ok, struct_err = _structural_check(new_text)
             if not struct_ok:
                 rolled_back += 1
-                log(f"  ✗ 汉化失败已回退: {rel}")
+                log(f"  ✗ 本地化失败已回退: {rel}")
                 log(f"    原因: {struct_err}")
                 continue
             log(f"  ! {rel}: 原文未通过严格语法检查（{old_err}），已用结构检查放行")
@@ -561,5 +574,5 @@ def localize_scripts_in(root: Path, llm_cfg, log) -> tuple[int, int, int, int]:
         except OSError as e:
             log(f"  写入失败 {fp.name}: {e}")
     if rolled_back:
-        log(f"  共 {rolled_back} 个文件汉化后格式异常，已保持原文未改")
+        log(f"  共 {rolled_back} 个文件本地化后格式异常，已保持原文未改")
     return len(files), total_hits, written, rolled_back

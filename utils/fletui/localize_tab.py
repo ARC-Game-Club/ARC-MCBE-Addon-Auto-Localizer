@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""模组汉化页：格式化 + 语言 / display_name / 脚本 / 署名。"""
+"""模组本地化页：格式化 + display_name 标准化 / 语言 / 脚本 / 署名。"""
 from __future__ import annotations
 
 import threading
@@ -7,25 +7,22 @@ from pathlib import Path
 
 import flet as ft
 
-from .. import PROJECT_ROOT
-from ..credit_service import apply_credit_to_mod
-from ..display_name_service import (
-    apply_display_name_map,
-    extract_display_names,
-    translate_display_name_map,
-)
+from ..credit_service import apply_credit_to_mod, format_credit_suffix
+from ..display_name_service import standardize_display_names_for_mod
 from ..format_service import format_js_files_in, format_json_files_in
 from ..lang_files import (
-    copy_lang_to_zh_cn,
-    ensure_zh_cn_in_languages,
+    copy_lang_to_target,
+    ensure_language_in_languages,
     lang_file_needs_translation,
     parse_lang_content,
+    read_lang_map,
     rebuild_lang_lines,
 )
+from ..languages import DEFAULT_CODE, label_of
 from ..llm_service import translate_lang_batch
 from ..pack_rename_service import sync_mod_pack_folder_names
 from ..script_localize_service import localize_scripts_in
-from ..text_utils import is_english_text
+from ..text_utils import needs_translation
 from .base_tab import BaseTab
 from .components import SectionCard, error_toast
 
@@ -42,8 +39,15 @@ class LocalizeTab(BaseTab):
         self.root.content = self.build()
         self.page.run_thread(self._auto_format_worker)
 
+    def _target_code(self) -> str:
+        code = (self.config.get("target_language") or DEFAULT_CODE).strip()
+        return code or DEFAULT_CODE
+
+    def _lang_label(self) -> str:
+        return label_of(self._target_code())
+
     def _await_format(self) -> None:
-        """汉化步骤须等进页自动规范化结束，避免日志交错、读写打架。"""
+        """本地化步骤须等进页自动规范化结束，避免日志交错、读写打架。"""
         if self._format_ready.is_set():
             return
         self.log("等待 JSON/JS 规范化完成…")
@@ -68,32 +72,35 @@ class LocalizeTab(BaseTab):
 
     def build(self) -> ft.Control:
         credit = (self.config.get("translator_credit") or "DEVILENMO").strip()
+        code = self._target_code()
+        lang = self._lang_label()
+        suffix = format_credit_suffix(credit, code)
         self.credit_btn = ft.FilledTonalButton(
-            f"④ 汉化者署名（{credit}汉化）",
+            f"④ 本地化者署名（{suffix}）",
             icon=ft.Icons.BADGE,
             on_click=lambda e: self.run_credit(),
         )
 
         steps = SectionCard(
-            "汉化步骤",
+            f"本地化步骤（→ {lang}）",
             ft.FilledButton(
-                "① 语言文件汉化",
-                icon=ft.Icons.TRANSLATE,
-                on_click=lambda e: self.run_lang(),
-            ),
-            ft.FilledButton(
-                "② Display Name 汉化",
+                "① Display Name 标准化",
                 icon=ft.Icons.LABEL,
                 on_click=lambda e: self.run_display_name(),
             ),
             ft.FilledButton(
-                "③ 脚本提示汉化",
+                f"② 语言文件翻译（→ {lang}）",
+                icon=ft.Icons.TRANSLATE,
+                on_click=lambda e: self.run_lang(),
+            ),
+            ft.FilledButton(
+                "③ 脚本提示本地化",
                 icon=ft.Icons.CODE,
                 on_click=lambda e: self.run_scripts(),
             ),
             self.credit_btn,
             ft.FilledButton(
-                "⚡ 一键汉化（语言 + Display Name + 脚本 + 署名）",
+                "⚡ 一键本地化（标准化 + 语言 + 脚本 + 署名）",
                 icon=ft.Icons.BOLT,
                 on_click=lambda e: self.run_all(),
             ),
@@ -102,8 +109,9 @@ class LocalizeTab(BaseTab):
         body = ft.Column(
             controls=[
                 ft.Text(
-                    "进入本页后会自动规范化 JSON / JS。下方按步骤执行，或使用一键汉化。"
-                    "图片汉化请到侧栏「图片汉化」页。",
+                    "进入本页后会自动规范化 JSON / JS。下方按步骤执行，或使用一键本地化。"
+                    "图片本地化请到侧栏「图片本地化」页。"
+                    f"当前目标语言：{lang}（{code}）。",
                     size=13,
                     color=ft.Colors.ON_SURFACE_VARIANT,
                 ),
@@ -152,6 +160,25 @@ class LocalizeTab(BaseTab):
         finally:
             self._format_ready.set()
 
+    def run_display_name(self) -> None:
+        if not self._packs():
+            error_toast(self.page, "当前模组没有可用包")
+            return
+        self.run_in_thread(self._display_name_worker)
+
+    def _display_name_worker(self) -> None:
+        self._await_format()
+        code = self._target_code()
+        self.log("=" * 50)
+        self.log(f"Display Name 标准化（→ {self._lang_label()} / {code}）…")
+        llm_cfg = self.config.get("text_llm")
+        found, std, fb = standardize_display_names_for_mod(
+            self._packs(), code, self.log, llm_cfg=llm_cfg
+        )
+        self.log(
+            f"Display Name 结束：找到 {found}，标准化 {std}，回退直译 {fb}"
+        )
+
     def run_lang(self) -> None:
         if not self._packs():
             error_toast(self.page, "当前模组没有可用的资源包或行为包")
@@ -163,24 +190,26 @@ class LocalizeTab(BaseTab):
 
     def _lang_worker(self) -> None:
         self._await_format()
+        code = self._target_code()
+        lang = self._lang_label()
         self.log("=" * 50)
-        self.log("开始语言文件汉化 …")
+        self.log(f"开始语言文件翻译（→ {lang}）…")
         for label, pack in self._packs():
             texts = pack / "texts"
             self.log(f"—— {label}: {pack.name} ——")
             if not texts.is_dir():
                 self.log("  无 texts/，跳过")
                 continue
-            ensure_zh_cn_in_languages(texts, self.log)
-            zh = copy_lang_to_zh_cn(texts, self.log)
-            if zh is None:
+            ensure_language_in_languages(texts, code, self.log)
+            target = copy_lang_to_target(texts, code, self.log)
+            if target is None:
                 continue
-            self._translate_zh_lang(zh)
-        self.log("语言文件汉化结束")
+            self._translate_target_lang(target, texts, code, lang)
+        self.log("语言文件翻译结束")
         self._sync_folder_names()
 
     def _sync_folder_names(self) -> None:
-        self.log("按中文包名同步文件夹 …")
+        self.log("按本地化包名同步文件夹 …")
         n = sync_mod_pack_folder_names(self._rp(), self._bp(), self.config, self.log)
         if n and self._on_pack_paths_changed is not None:
             try:
@@ -188,21 +217,37 @@ class LocalizeTab(BaseTab):
             except Exception as e:
                 self.log(f"刷新界面路径失败: {e}")
 
-    def _translate_zh_lang(self, zh: Path) -> None:
-        orig_text = zh.read_text(encoding="utf-8")
+    def _translate_target_lang(
+        self, target: Path, texts: Path, code: str, lang: str
+    ) -> None:
+        orig_text = target.read_text(encoding="utf-8")
         parsed = parse_lang_content(orig_text)
-        entries = [
-            (key, value)
-            for kind, key, value in parsed
-            if kind == "entry" and is_english_text(value)
-        ]
+        en_map = read_lang_map(texts / "en_US.lang")
+
+        from ..languages import get as get_lang
+
+        script = get_lang(code).script
+        entries = []
+        for kind, key, value in parsed:
+            if kind != "entry" or key is None:
+                continue
+            en_val = en_map.get(key)
+            if en_val is not None and value == en_val:
+                # 与英文源相同：目标若是英语则跳过，否则待译
+                if not code.startswith("en"):
+                    entries.append((key, value))
+            elif needs_translation(value, code):
+                # 无 en_US 对照，或已与英文不同但仍像源语言（CJK 等）
+                if en_val is None or script != "latin":
+                    entries.append((key, value))
+
         total = len(entries)
-        self.log(f"翻译 {zh}，待译 {total} 条")
+        self.log(f"翻译 {target.name}，待译 {total} 条")
         if total == 0:
-            if lang_file_needs_translation(zh):
-                self.log("  （检测仍有英文，但过滤器未命中条目）")
+            if lang_file_needs_translation(target, code):
+                self.log("  （检测仍可能有待译内容，但过滤器未命中条目）")
             else:
-                self.log("  无需翻译（可能已是中文）")
+                self.log(f"  无需翻译（可能已是{lang}）")
             return
         all_translated = {}
         for i in range(0, total, self.BATCH_SIZE):
@@ -214,45 +259,19 @@ class LocalizeTab(BaseTab):
                 f"  批次 {i // self.BATCH_SIZE + 1}: "
                 f"{i + 1}-{min(i + self.BATCH_SIZE, total)}"
             )
-            result = translate_lang_batch(batch, self.config.get("text_llm"), self.log)
+            result = translate_lang_batch(
+                batch, self.config.get("text_llm"), self.log, lang_label=lang
+            )
             all_translated.update(result)
             self.set_progress(min(i + self.BATCH_SIZE, total), total)
         new_content = rebuild_lang_lines(orig_text, parsed, all_translated)
-        zh.write_text(new_content, encoding="utf-8")
-        self.log(f"已写入 {zh.name}")
-
-    def run_display_name(self) -> None:
-        root = self._bp() or self._rp()
-        if root is None:
-            error_toast(self.page, "当前模组没有可用包")
-            return
-        if not self.config.get("text_llm", "api_key"):
-            error_toast(self.page, "请先在设置中填写文本翻译 API Key")
-            return
-        self.run_in_thread(self._display_name_worker, root)
-
-    def _display_name_worker(self, root: Path) -> None:
-        self._await_format()
-        self.log("=" * 50)
-        self.log(f"Display Name 汉化：{root}")
-        out_p = PROJECT_ROOT / "display_names_translation.txt"
-        processed, found = extract_display_names(root, out_p)
-        self.log(f"扫描 {processed} 个 JSON，找到 {found} 条")
-        if found == 0:
-            self.log("无 display_name，跳过")
-            return
-        count = translate_display_name_map(out_p, self.config.get("text_llm"), self.log)
-        self.log(f"LLM 翻译 {count} 条")
-        updated, skipped, not_found = apply_display_name_map(root, out_p, self.log)
-        self.log(f"应用完成：更新 {updated}，跳过 {skipped}，未找到 {not_found}")
-
-    def _credit_name(self) -> str:
-        return (self.config.get("translator_credit") or "DEVILENMO").strip() or "DEVILENMO"
+        target.write_text(new_content, encoding="utf-8")
+        self.log(f"已写入 {target.name}")
 
     def run_scripts(self) -> None:
         bp = self._bp()
         if bp is None:
-            error_toast(self.page, "当前模组没有行为包，无法汉化脚本")
+            error_toast(self.page, "当前模组没有行为包，无法本地化脚本")
             return
         if not self.config.get("text_llm", "api_key"):
             error_toast(self.page, "请先在设置中填写文本翻译 API Key")
@@ -261,32 +280,46 @@ class LocalizeTab(BaseTab):
 
     def _scripts_worker(self, root: Path) -> None:
         self._await_format()
+        code = self._target_code()
+        lang = self._lang_label()
         self.log("=" * 50)
-        self.log(f"脚本提示汉化：{root}")
+        self.log(f"脚本提示本地化（→ {lang}）：{root}")
         files, hits, written, failed = localize_scripts_in(
-            root, self.config.get("text_llm"), self.log
+            root,
+            self.config.get("text_llm"),
+            self.log,
+            lang_label=lang,
+            target_code=code,
         )
         self.log(
-            f"脚本汉化结束：文件 {files}，命中 {hits}，写入 {written}，失败回退 {failed}"
+            f"脚本本地化结束：文件 {files}，命中 {hits}，写入 {written}，失败回退 {failed}"
         )
         if failed:
-            error_toast(self.page, f"有 {failed} 个脚本汉化后格式异常，已自动回退，详见日志")
+            error_toast(
+                self.page,
+                f"有 {failed} 个脚本本地化后格式异常，已自动回退，详见日志",
+            )
+
+    def _credit_name(self) -> str:
+        return (self.config.get("translator_credit") or "DEVILENMO").strip() or "DEVILENMO"
 
     def run_credit(self) -> None:
         if not self._packs():
             error_toast(self.page, "当前模组没有可用包")
             return
         credit = self._credit_name()
+        code = self._target_code()
         if self.credit_btn is not None:
-            self.credit_btn.text = f"④ 汉化者署名（{credit}汉化）"
+            self.credit_btn.text = f"④ 本地化者署名（{format_credit_suffix(credit, code)}）"
             self.credit_btn.update()
         self.run_in_thread(self._credit_worker, credit)
 
     def _credit_worker(self, credit: str) -> None:
         self._await_format()
+        code = self._target_code()
         self.log("=" * 50)
-        self.log(f"应用署名: （{credit}汉化）")
-        n = apply_credit_to_mod(self._rp(), self._bp(), credit, self.log)
+        self.log(f"应用署名: {format_credit_suffix(credit, code)}")
+        n = apply_credit_to_mod(self._rp(), self._bp(), credit, self.log, code=code)
         self.log(f"署名完成：成功 {n} 个包")
         self._sync_folder_names()
 
@@ -302,13 +335,11 @@ class LocalizeTab(BaseTab):
     def _all_worker(self) -> None:
         self._await_format()
         self.log("=" * 50)
-        self.log("一键汉化开始")
+        self.log("一键本地化开始")
+        self._display_name_worker()
         self._lang_worker()
-        root = self._bp() or self._rp()
-        if root is not None:
-            self._display_name_worker(root)
         bp = self._bp()
         if bp is not None:
             self._scripts_worker(bp)
         self._credit_worker(self._credit_name())
-        self.log("一键汉化结束")
+        self.log("一键本地化结束")

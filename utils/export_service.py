@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""导出汉化包为 .mcpack / .mcaddon（均为 ZIP 改后缀）。"""
+"""导出本地化包为 .mcpack / .mcaddon（均为 ZIP 改后缀）。"""
 from __future__ import annotations
 
 import re
@@ -7,10 +7,10 @@ import zipfile
 from pathlib import Path
 
 from .credit_service import with_credit
+from .languages import DEFAULT_CODE, strip_credit_suffix
 
 _INVALID_WIN = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 _MC_FORMAT = re.compile(r"§.")
-_CREDIT_RE = re.compile(r"（[^）]*汉化）\s*$")
 _SKIP_NAMES = {".ds_store", "thumbs.db", "desktop.ini"}
 
 
@@ -27,8 +27,8 @@ def sanitize_export_name(name: str, max_len: int = 80) -> str:
 
 
 def base_mod_name(name: str) -> str:
-    """去掉已有 （xxx汉化） 后缀，得到模组基名。"""
-    return _CREDIT_RE.sub("", (name or "").rstrip()).rstrip() or name or "unnamed_mod"
+    """去掉已有本地化署名后缀，得到模组基名。"""
+    return strip_credit_suffix(name or "") or name or "unnamed_mod"
 
 
 def _should_skip(path: Path) -> bool:
@@ -59,8 +59,12 @@ def _add_pack_to_zip(zf: zipfile.ZipFile, pack_dir: Path, arc_prefix: str | None
     return count
 
 
-def build_export_filename(mod_name: str, credit: str, both: bool) -> str:
-    titled = sanitize_export_name(with_credit(base_mod_name(mod_name), credit))
+def build_export_filename(
+    mod_name: str, credit: str, both: bool, code: str | None = None
+) -> str:
+    titled = sanitize_export_name(
+        with_credit(base_mod_name(mod_name), credit, code or DEFAULT_CODE)
+    )
     return f"{titled}.mcaddon" if both else f"{titled}.mcpack"
 
 
@@ -71,12 +75,14 @@ def export_localized_pack(
     rp: Path | None,
     bp: Path | None,
     log,
+    code: str | None = None,
 ) -> Path:
     """
     导出当前模组：
-    - RP+BP → 模组名（xxx汉化）.mcaddon，内含 模组名BP / 模组名RP
-    - 仅一侧 → 模组名（xxx汉化）.mcpack（包内容在 zip 根目录）
+    - RP+BP → 模组名+署名.mcaddon，内含 模组名BP / 模组名RP
+    - 仅一侧 → 模组名+署名.mcpack（包内容在 zip 根目录）
     """
+    code = (code or DEFAULT_CODE).strip() or DEFAULT_CODE
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     has_rp = rp is not None and Path(rp).is_dir()
@@ -86,7 +92,7 @@ def export_localized_pack(
 
     base = sanitize_export_name(base_mod_name(mod_name))
     both = has_rp and has_bp
-    filename = build_export_filename(base, credit, both)
+    filename = build_export_filename(base, credit, both, code)
     dest = out_dir / filename
     if dest.exists():
         dest.unlink()

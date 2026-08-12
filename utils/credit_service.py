@@ -1,31 +1,30 @@
 # -*- coding: utf-8 -*-
-"""汉化者署名：在 pack.name / manifest 包名后追加（xxx汉化）。"""
+"""本地化者署名：在 pack.name / manifest 包名后追加署名后缀。"""
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 
-_CREDIT_RE = re.compile(r"（[^）]*汉化）\s*$")
+from .languages import DEFAULT_CODE, credit_suffix, strip_credit_suffix
 
 
-def format_credit_suffix(credit: str) -> str:
+def format_credit_suffix(credit: str, code: str | None = None) -> str:
     credit = (credit or "").strip()
     if not credit:
         raise ValueError("署名为空")
-    return f"（{credit}汉化）"
+    return credit_suffix(code or DEFAULT_CODE, credit)
 
 
-def with_credit(name: str, credit: str) -> str:
+def with_credit(name: str, credit: str, code: str | None = None) -> str:
     """在名称后追加或替换署名后缀。"""
-    suffix = format_credit_suffix(credit)
-    base = _CREDIT_RE.sub("", (name or "").rstrip()).rstrip()
+    suffix = format_credit_suffix(credit, code)
+    base = strip_credit_suffix(name or "")
     if not base:
         base = name or "pack"
     return base + suffix
 
 
-def _update_lang_pack_name(lang_path: Path, credit: str, log) -> bool:
+def _update_lang_pack_name(lang_path: Path, credit: str, code: str, log) -> bool:
     try:
         content = lang_path.read_text(encoding="utf-8-sig")
     except (OSError, UnicodeError) as e:
@@ -39,7 +38,7 @@ def _update_lang_pack_name(lang_path: Path, credit: str, log) -> bool:
     for line in content.splitlines():
         if line.startswith("pack.name="):
             old = line.split("=", 1)[1]
-            new = with_credit(old, credit)
+            new = with_credit(old, credit, code)
             out_lines.append(f"pack.name={new}")
             found = True
             if new != old:
@@ -55,11 +54,11 @@ def _update_lang_pack_name(lang_path: Path, credit: str, log) -> bool:
     if content.endswith("\n"):
         new_text += "\n"
     lang_path.write_text(new_text, encoding="utf-8")
-    log(f"已更新 {lang_path.name}: pack.name → （{credit.strip()}汉化）")
+    log(f"已更新 {lang_path.name}: pack.name → {format_credit_suffix(credit, code)}")
     return True
 
 
-def _update_manifest_name(pack_dir: Path, credit: str, log) -> bool:
+def _update_manifest_name(pack_dir: Path, credit: str, code: str, log) -> bool:
     mf = pack_dir / "manifest.json"
     if not mf.is_file():
         return False
@@ -77,7 +76,7 @@ def _update_manifest_name(pack_dir: Path, credit: str, log) -> bool:
     if name.strip() == "pack.name":
         log("manifest.name 为 pack.name，改在语言文件中署名")
         return False
-    new_name = with_credit(name, credit)
+    new_name = with_credit(name, credit, code)
     if new_name == name:
         log(f"manifest: 已含署名，跳过 ({pack_dir.name})")
         return True
@@ -88,13 +87,16 @@ def _update_manifest_name(pack_dir: Path, credit: str, log) -> bool:
     return True
 
 
-def apply_translator_credit(pack_dir: Path, credit: str, log) -> bool:
+def apply_translator_credit(
+    pack_dir: Path, credit: str, log, code: str | None = None
+) -> bool:
     """
     对单个包应用署名：
-    - 优先改 texts/zh_CN.lang 的 pack.name
+    - 优先改目标语言 .lang 的 pack.name
     - 否则改 languages.json 第一个语言 / 任意含 pack.name 的 .lang
     - 若 manifest.header.name 不是 pack.name，则直接改 manifest
     """
+    code = (code or DEFAULT_CODE).strip() or DEFAULT_CODE
     pack_dir = Path(pack_dir)
     if not pack_dir.is_dir():
         log(f"包不存在: {pack_dir}")
@@ -103,9 +105,9 @@ def apply_translator_credit(pack_dir: Path, credit: str, log) -> bool:
     texts = pack_dir / "texts"
     if texts.is_dir():
         candidates: list[Path] = []
-        zh = texts / "zh_CN.lang"
-        if zh.is_file():
-            candidates.append(zh)
+        target = texts / f"{code}.lang"
+        if target.is_file():
+            candidates.append(target)
         langs_path = texts / "languages.json"
         if langs_path.is_file():
             try:
@@ -120,23 +122,29 @@ def apply_translator_credit(pack_dir: Path, credit: str, log) -> bool:
             if lang_file not in candidates:
                 candidates.append(lang_file)
         for lang_file in candidates:
-            if _update_lang_pack_name(lang_file, credit, log):
+            if _update_lang_pack_name(lang_file, credit, code, log):
                 ok = True
                 break
-    if _update_manifest_name(pack_dir, credit, log):
+    if _update_manifest_name(pack_dir, credit, code, log):
         ok = True
     if not ok:
         log(f"未能在 {pack_dir.name} 中找到可署名的包名")
     return ok
 
 
-def apply_credit_to_mod(rp: Path | None, bp: Path | None, credit: str, log) -> int:
+def apply_credit_to_mod(
+    rp: Path | None,
+    bp: Path | None,
+    credit: str,
+    log,
+    code: str | None = None,
+) -> int:
     """对模组下已有的包应用署名，返回成功包数。"""
     n = 0
     for label, path in (("资源包", rp), ("行为包", bp)):
         if path is None:
             continue
         log(f"—— {label}: {path.name} ——")
-        if apply_translator_credit(path, credit, log):
+        if apply_translator_credit(path, credit, log, code=code):
             n += 1
     return n

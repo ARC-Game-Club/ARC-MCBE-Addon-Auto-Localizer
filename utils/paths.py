@@ -3,21 +3,31 @@
 import os
 from pathlib import Path
 
-# 用户级应用数据：%APPDATA%/ARCStudio/弧光自动汉化工具
+# 用户级应用数据：%APPDATA%/ARCStudio/弧光自动本地化工具
 APP_VENDOR = "ARCStudio"
-APP_NAME = "弧光自动汉化工具"
+APP_NAME = "弧光自动本地化工具"
+# 旧版产品名（配置迁移用）
+LEGACY_APP_NAMES = ("弧光自动汉化工具",)
+
+
+def _appdata_base() -> Path:
+    roaming = os.getenv("APPDATA")
+    if roaming:
+        return Path(roaming)
+    return Path(os.getenv("USERPROFILE") or os.path.expanduser("~")) / "AppData" / "Roaming"
 
 
 def get_app_data_dir() -> Path:
     """获取本工具的用户数据目录（配置等，不放仓库里）。"""
-    roaming = os.getenv("APPDATA")
-    if roaming:
-        base = Path(roaming)
-    else:
-        base = Path(os.getenv("USERPROFILE") or os.path.expanduser("~")) / "AppData" / "Roaming"
-    path = base / APP_VENDOR / APP_NAME
+    path = _appdata_base() / APP_VENDOR / APP_NAME
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def get_legacy_app_data_dirs() -> list[Path]:
+    """旧版用户数据目录（用于迁移配置）。"""
+    base = _appdata_base() / APP_VENDOR
+    return [base / name for name in LEGACY_APP_NAMES]
 
 
 def get_minecraft_base_dir() -> Path:

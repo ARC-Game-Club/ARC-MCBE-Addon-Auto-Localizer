@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""导出汉化包页。"""
+"""导出本地化包页。"""
 from __future__ import annotations
 
 import os
@@ -9,12 +9,14 @@ from pathlib import Path
 
 import flet as ft
 
+from ..cloud_drives import drivers_from
 from ..export_service import (
     base_mod_name,
     build_export_filename,
     export_localized_pack,
     sanitize_export_name,
 )
+from ..languages import DEFAULT_CODE, credit_suffix
 from .base_tab import BaseTab
 from .components import SectionCard, error_toast, toast
 
@@ -25,6 +27,14 @@ class ExportTab(BaseTab):
         self.file_picker = file_picker
         default_out = config.get("export_dir") or str(Path.home() / "Downloads")
         self.out_field = ft.TextField(label="导出目录", value=default_out, expand=True)
+        self.drives = drivers_from(config._data)
+        self.drive_switches = {
+            drive.id: ft.Switch(
+                label=f"上传到{drive.display_name}" + ("并分享" if drive.supports_share else ""),
+                value=drive.is_enabled(),
+            )
+            for drive in self.drives
+        }
         self.preview = ft.Text("", font_family="Consolas", size=12, selectable=True)
         self.root.content = self.build()
         self._refresh_preview()
@@ -51,6 +61,10 @@ class ExportTab(BaseTab):
     def _credit(self) -> str:
         return (self.config.get("translator_credit") or "DEVILENMO").strip() or "DEVILENMO"
 
+    def _target_code(self) -> str:
+        code = (self.config.get("target_language") or DEFAULT_CODE).strip()
+        return code or DEFAULT_CODE
+
     def build(self) -> ft.Control:
         body = ft.Column(
             controls=[
@@ -58,7 +72,8 @@ class ExportTab(BaseTab):
                     "将当前模组导出为可双击导入的压缩包：\n"
                     "· 同时有资源包与行为包 → .mcaddon\n"
                     "· 仅有一侧 → .mcpack\n"
-                    "二者本质都是 ZIP，仅后缀不同。",
+                    "二者本质都是 ZIP，仅后缀不同。\n"
+                    "勾选下方网盘开关可在导出后自动上传 / 分享。",
                     size=13,
                     color=ft.Colors.ON_SURFACE_VARIANT,
                 ),
@@ -74,8 +89,9 @@ class ExportTab(BaseTab):
                     ],
                     spacing=8,
                 ),
+                ft.Column(controls=list(self.drive_switches.values()), spacing=4, tight=True),
                 ft.FilledButton(
-                    "导出汉化包",
+                    "导出本地化包",
                     icon=ft.Icons.ARCHIVE,
                     on_click=lambda e: self._export(),
                 ),
@@ -93,12 +109,13 @@ class ExportTab(BaseTab):
     def _refresh_preview(self) -> None:
         rp, bp = self._rp(), self._bp()
         credit = self._credit()
+        code = self._target_code()
         mod = sanitize_export_name(base_mod_name(self._mod_name()))
         both = rp is not None and bp is not None
-        filename = build_export_filename(mod, credit, both)
+        filename = build_export_filename(mod, credit, both, code)
         lines = [
             f"模组: {mod}",
-            f"署名: （{credit}汉化）",
+            f"署名: {credit_suffix(code, credit)}",
             f"资源包: {rp.name if rp else '（无）'}",
             f"行为包: {bp.name if bp else '（无）'}",
             f"输出文件: {filename}",
@@ -138,13 +155,15 @@ class ExportTab(BaseTab):
             error_toast(self.page, "当前模组没有可用包")
             return
         self.config.set(str(out), "export_dir")
+        for drive in self.drives:
+            drive.cfg["enabled"] = bool(self.drive_switches[drive.id].value)
         self.config.save()
         self._refresh_preview()
         self.run_in_thread(self._export_worker, out)
 
     def _export_worker(self, out: Path) -> None:
         self.log("=" * 50)
-        self.log("开始导出汉化包 …")
+        self.log("开始导出本地化包 …")
         try:
             dest = export_localized_pack(
                 out_dir=out,
@@ -153,6 +172,7 @@ class ExportTab(BaseTab):
                 rp=self._rp(),
                 bp=self._bp(),
                 log=self.log,
+                code=self._target_code(),
             )
         except Exception as err:
             self.log(f"导出失败: {err}")
@@ -160,16 +180,42 @@ class ExportTab(BaseTab):
             return
         self.log(f"完成: {dest}")
         folder = dest.parent
+        results = self._publish_export(dest)
+        ok = sum(1 for r in results if r.ok)
 
         def open_folder(_=None):
             self._open_folder(folder)
 
+        extra = f"，已上传 {ok} 个网盘" if results else ""
         toast(
             self.page,
-            f"已导出: {dest.name}",
+            f"已导出: {dest.name}{extra}",
             action_label="打开文件夹",
             on_action=open_folder,
         )
+
+    def _publish_export(self, dest: Path):
+        chosen = [d for d in self.drives if d.is_enabled()]
+        if not chosen:
+            return []
+        results = []
+        for drive in chosen:
+            if not drive.is_authorized():
+                self.log(f"{drive.display_name}未登录，已跳过。请到设置里完成授权 / 填写 Cookie。")
+                continue
+            self.log(f"开始发布到{drive.display_name} …")
+            result = drive.publish(dest, log=self.log)
+            self.config.save()
+            results.append(result)
+            self.log(result.summary())
+            if result.share and result.share.url:
+                self.log(f"  分享链接: {result.share.url}")
+                if result.share.password:
+                    self.log(f"  提取码: {result.share.password}")
+        failed = [r for r in results if not r.ok]
+        if failed:
+            error_toast(self.page, "；".join(r.summary() for r in failed))
+        return results
 
     @staticmethod
     def _open_folder(folder: Path) -> None:

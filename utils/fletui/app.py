@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""弧光自动汉化工具 —— Flet 主窗口装配。
+"""弧光自动本地化工具 —— Flet 主窗口装配。
 
 不用 page.views（0.86 下 View 内 expand 易塌成白屏），改为单页内容切换：
   welcome  → 首屏选模组
@@ -22,12 +22,12 @@ from .theme import APP_TITLE, APP_VERSION, ICON_ASSET, apply_page_theme
 from .welcome_view import WelcomeView
 
 NAV_ITEMS = [
-    ("localize", "模组汉化", ft.Icons.TRANSLATE),
-    ("image", "图片汉化", ft.Icons.IMAGE),
+    ("localize", "模组本地化", ft.Icons.TRANSLATE),
+    ("image", "图片本地化", ft.Icons.IMAGE),
     ("pbr", "灵动视效", ft.Icons.VISIBILITY),
     ("achievement", "成就兼容", ft.Icons.EMOJI_EVENTS),
     ("entity", "实体工具", ft.Icons.PETS),
-    ("export", "导出汉化包", ft.Icons.ARCHIVE),
+    ("export", "导出本地化包", ft.Icons.ARCHIVE),
 ]
 
 
@@ -146,7 +146,7 @@ class HubApp:
             self._tabs_pack_key = pack_key
 
             def on_pack_paths_changed() -> None:
-                """汉化后文件夹改名时：同步 pack_key、状态栏，并刷新图片目录列表。"""
+                """本地化后文件夹改名时：同步 pack_key、状态栏，并刷新图片目录列表。"""
                 self._tabs_pack_key = (
                     self.config.get("resource_pack_path").strip(),
                     self.config.get("behavior_pack_path").strip(),
@@ -203,7 +203,14 @@ class HubApp:
         self._return_screen = self._screen if self._screen != "settings" else self._return_screen
         self._screen = "settings"
         self._set_back(True, "返回")
-        settings = SettingsView(self.page, self.config, on_saved=self._update_status)
+
+        def on_saved() -> None:
+            # 目标语言等变更后重建工具箱页签，使步骤文案立即生效
+            self._tabs = {}
+            self._tabs_pack_key = None
+            self._update_status()
+
+        settings = SettingsView(self.page, self.config, on_saved=on_saved)
         self._body.content = settings.root
         self._body.padding = 16
         self.page.update()

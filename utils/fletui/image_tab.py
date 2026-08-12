@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""图片汉化页：按目录预览、勾选后汉化，写回保持原分辨率。"""
+"""图片本地化页：按目录预览、勾选后本地化，写回保持原分辨率。"""
 from __future__ import annotations
 
 import io
@@ -7,6 +7,7 @@ from pathlib import Path
 
 import flet as ft
 
+from ..languages import DEFAULT_CODE, label_of
 from ..llm_service import translate_image_file
 from .base_tab import BaseTab
 from .components import confirm, error_toast, toast
@@ -47,7 +48,7 @@ class ImageTab(BaseTab):
             bgcolor=ft.Colors.SURFACE_CONTAINER_LOWEST,
         )
         self.translate_btn = ft.FilledButton(
-            "汉化选中图片",
+            "本地化选中图片",
             icon=ft.Icons.TRANSLATE,
             disabled=True,
             on_click=lambda e: self._confirm_translate(),
@@ -123,7 +124,7 @@ class ImageTab(BaseTab):
         body = ft.Column(
             controls=[
                 ft.Text(
-                    "左侧选目录，右侧勾选要汉化的图片（点整行也可切换）。"
+                    "左侧选目录，右侧勾选要本地化的图片（点整行也可切换）。"
                     "写回强制保持原分辨率；原图备份到同目录 _backup/。",
                     size=13,
                     color=ft.Colors.ON_SURFACE_VARIANT,
@@ -177,7 +178,7 @@ class ImageTab(BaseTab):
             return None
 
     def _is_likely_guidebook(self, folder: Path) -> bool:
-        """路径含 book/guide，或目录内图片名含 page → 通常需汉化。"""
+        """路径含 book/guide，或目录内图片名含 page → 通常需本地化。"""
         for part in folder.parts:
             low = part.casefold()
             if "book" in low or "guide" in low:
@@ -241,7 +242,7 @@ class ImageTab(BaseTab):
             pinned = sum(1 for d in self._folder_dirs if self._is_likely_guidebook(d))
             hint = f"共 {len(self._folder_dirs)} 个目录"
             if pinned:
-                hint += f"（置顶建议汉化 {pinned} 个）"
+                hint += f"（置顶建议本地化 {pinned} 个）"
             self.folder_hint.value = hint
             for d in self._folder_dirs:
                 count = sum(
@@ -260,7 +261,7 @@ class ImageTab(BaseTab):
                             weight=ft.FontWeight.W_600,
                         ),
                         subtitle=ft.Text(
-                            f"建议汉化 · {count} 张",
+                            f"建议本地化 · {count} 张",
                             size=11,
                             color=BRAND_PINK,
                         ),
@@ -408,7 +409,7 @@ class ImageTab(BaseTab):
     def _sync_translate_btn(self) -> None:
         n = len(self._selected)
         self.translate_btn.disabled = n == 0
-        self.translate_btn.text = f"汉化选中图片（{n}）"
+        self.translate_btn.text = f"本地化选中图片（{n}）"
         try:
             self.translate_btn.update()
         except Exception:
@@ -420,32 +421,36 @@ class ImageTab(BaseTab):
             return
         images = [p for p in self._images if p in self._selected]
         if not images:
-            error_toast(self.page, "请先勾选要汉化的图片")
+            error_toast(self.page, "请先勾选要本地化的图片")
             return
         confirm(
             self.page,
-            title="确认图片汉化",
-            message=f"将汉化选中的 {len(images)} 张图片，并强制保持各自原分辨率。原图备份到 _backup/。",
+            title="确认图片本地化",
+            message=f"将本地化选中的 {len(images)} 张图片，并强制保持各自原分辨率。原图备份到 _backup/。",
             on_yes=lambda: self.run_in_thread(self._images_worker, images),
         )
 
     def _images_worker(self, images: list[Path]) -> None:
         total = len(images)
+        code = (self.config.get("target_language") or DEFAULT_CODE).strip() or DEFAULT_CODE
+        lang = label_of(code)
         self.log("=" * 50)
-        self.log(f"图片汉化：选中 {total} 张（保持原分辨率）")
+        self.log(f"图片本地化（→ {lang}）：选中 {total} 张（保持原分辨率）")
         ok = 0
         for n, path in enumerate(images, 1):
             if self._stop_flag.is_set():
                 self.log("已停止")
                 break
             self.log(f"[{n}/{total}] {path.name}")
-            if translate_image_file(path, self.config.get("image_llm"), True, self.log):
+            if translate_image_file(
+                path, self.config.get("image_llm"), True, self.log, lang_label=lang
+            ):
                 ok += 1
             self.set_progress(n, total)
-        self.log(f"图片汉化结束：成功 {ok}/{total}")
+        self.log(f"图片本地化结束：成功 {ok}/{total}")
         if self._current_folder is not None:
             try:
                 self.open_folder(self._current_folder)
             except Exception:
                 pass
-        toast(self.page, f"图片汉化完成：成功 {ok}/{total}")
+        toast(self.page, f"图片本地化完成：成功 {ok}/{total}")
