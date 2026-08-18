@@ -20,6 +20,7 @@ from ..lang_files import (
 )
 from ..languages import DEFAULT_CODE, label_of
 from ..llm_service import translate_lang_batch
+from ..manifest_service import localize_manifest_header
 from ..pack_rename_service import sync_mod_pack_folder_names
 from ..script_localize_service import localize_scripts_in
 from ..text_utils import needs_translation
@@ -197,14 +198,21 @@ class LocalizeTab(BaseTab):
         for label, pack in self._packs():
             texts = pack / "texts"
             self.log(f"—— {label}: {pack.name} ——")
-            if not texts.is_dir():
-                self.log("  无 texts/，跳过")
-                continue
-            ensure_language_in_languages(texts, code, self.log)
-            target = copy_lang_to_target(texts, code, self.log)
-            if target is None:
-                continue
-            self._translate_target_lang(target, texts, code, lang)
+            if texts.is_dir():
+                ensure_language_in_languages(texts, code, self.log)
+                target = copy_lang_to_target(texts, code, self.log)
+                if target is not None:
+                    self._translate_target_lang(target, texts, code, lang)
+            else:
+                self.log("  无 texts/，跳过语言文件")
+            localize_manifest_header(
+                pack,
+                self.config.get("text_llm"),
+                self.log,
+                code=code,
+                lang_label=lang,
+                credit=self._credit_name(),
+            )
         self.log("语言文件翻译结束")
         self._sync_folder_names()
 

@@ -138,6 +138,10 @@ def toast(page: ft.Page, message: str, action_label: str | None = None, on_actio
             content=ft.Text(message),
             action=action_label,
             on_action=on_action,
+            # 有 action 时 Flet 默认 persist=True，会一直挡住界面
+            persist=False,
+            show_close_icon=True,
+            duration=ft.Duration(seconds=6),
         )
     )
 
@@ -147,6 +151,9 @@ def error_toast(page: ft.Page, message: str) -> None:
         ft.SnackBar(
             content=ft.Text(message),
             bgcolor=ft.Colors.ERROR,
+            persist=False,
+            show_close_icon=True,
+            duration=ft.Duration(seconds=8),
         )
     )
 

@@ -5,7 +5,7 @@
 # ARC MCBE Addon Auto Localizer
 
 [![Codacy Grade](https://app.codacy.com/project/badge/Grade/077e44f1b31948caa7f55e909507df1e)](https://app.codacy.com/gh/ARC-Minecraft/ARC-MCBE-Addon-Auto-Localizer/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
-[![Version](https://img.shields.io/badge/version-v1.1.0-blue)](https://github.com/ARC-Minecraft/ARC-MCBE-Addon-Auto-Localizer)
+[![Version](https://img.shields.io/badge/version-v1.1.1-blue)](https://github.com/ARC-Minecraft/ARC-MCBE-Addon-Auto-Localizer)
 [![Python](https://img.shields.io/badge/python-3.12+-blue?logo=python&logoColor=white)](https://www.python.org/)
 [![Flet](https://img.shields.io/badge/Flet-0.86-black)](https://flet.dev/)
 [![License](https://img.shields.io/github/license/ARC-Minecraft/ARC-MCBE-Addon-Auto-Localizer)](LICENSE)
@@ -45,8 +45,8 @@ Short name: **ARC Auto Localizer**
 - **Email**: DEVILENMO@gmail.com
 - **组织**: [ARC Minecraft](https://github.com/ARC-Minecraft) / ARCStudio
 - **Org**: [ARC Minecraft](https://github.com/ARC-Minecraft) / ARCStudio
-- **版本**: 1.1.0
-- **Version**: 1.1.0
+- **版本**: 1.1.1
+- **Version**: 1.1.1
 - **推荐 Python 版本**: 3.12+
 - **Recommended Python**: 3.12+
 - **UI 框架**: Flet 0.86
@@ -151,8 +151,8 @@ Entering this page auto-formats JSON / JS (unchanged files are not rewritten).
 | 步骤 / Step | 说明 / Description |
 |------|------|
 | Display Name 标准化<br>Display Name normalization | 扫描 JSON 中的 `minecraft:display_name`：能解析出 `minecraft:item` / `entity` / `block` + `identifier` 时，把 value 改成 `item.ns:id.name` / `entity.ns:id.name` / `tile.ns:id.name`，并把英文原文写入 `en_US.lang` 与目标语言 `.lang`；无法推导的条目回退为 LLM 直译写回 value<br>Scan `minecraft:display_name` in JSON. When `minecraft:item` / `entity` / `block` plus `identifier` can be resolved, rewrite the value to `item.ns:id.name` / `entity.ns:id.name` / `tile.ns:id.name`, and append the English source to `en_US.lang` and the target `.lang`. Entries that cannot be derived fall back to LLM in-place translation. |
-| 语言文件翻译<br>Language-file translation | 确保目标语言在 `languages.json`、从英文 lang 复制并调用 LLM 批量翻译条目（与 `en_US` 相同的条目视为未译）<br>Ensure the target language is in `languages.json`, copy from the English lang file, and batch-translate with the LLM (entries still identical to `en_US` are treated as untranslated). |
-| 脚本提示本地化<br>Script-tip localization | 本地化 `sendMessage` / `form.title\|button\|label\|body\|toggle\|…`、`setActionBar`、`tooltip` 等玩家可见字符串；跳过语言键与含 `.map/.join` 的复杂多行模板；写入前 `node --check` 校验，失败自动回退<br>Localize player-visible strings such as `sendMessage`, form `title\|button\|label\|body\|toggle\|…`, `setActionBar`, and `tooltip`. Skip lang keys and complex multiline templates with `.map/.join`. Validate with `node --check` before write; roll back on failure. |
+| 语言文件翻译<br>Language-file translation | 确保目标语言在 `languages.json`、从英文 lang 复制并调用 LLM 批量翻译条目（与 `en_US` 相同的条目视为未译）。若 `manifest.header.name` / `description` 是字面量（不是 `pack.name`），一并翻译名称并加上署名后缀<br>Ensure the target language is in `languages.json`, copy from the English lang file, and batch-translate with the LLM (entries still identical to `en_US` are treated as untranslated). Literal `manifest.header.name` / `description` (not `pack.name`) are translated too, and the credit suffix is appended to the name. |
+| 脚本提示本地化<br>Script-tip localization | 本地化 `sendMessage` / `form.title\|button\|label\|body\|toggle\|dropdown\|…`、`setActionBar`、`tooltip` 等玩家可见字符串，**含 dropdown 选项数组**；跳过语言键与含 `.map/.join` 的复杂多行模板；写入前 `node --check` 校验，失败自动回退<br>Localize player-visible strings such as `sendMessage`, form `title\|button\|label\|body\|toggle\|dropdown\|…`, `setActionBar`, and `tooltip`, **including dropdown option arrays**. Skip lang keys and complex multiline templates with `.map/.join`. Validate with `node --check` before write; roll back on failure. |
 | 本地化者署名<br>Localizer credit | 在包名后追加按语言变化的署名后缀，默认 DEVILENMO，可在设置中改<br>Append a language-specific credit suffix to the pack name. Default is DEVILENMO; changeable in Settings. |
 | 一键本地化<br>One-click localize | 按顺序执行：标准化 → 语言 → 脚本 → 署名<br>Runs in order: normalize → language files → scripts → credit |
 
@@ -229,7 +229,7 @@ Drivers register as plugins under `utils/cloud_drives/`; Settings and Export pic
 | 网盘 / Drive | 登录方式 / Auth | 自动分享 / Auto share | 说明 / Notes |
 |------|----------|----------|------|
 | 百度网盘<br>Baidu Netdisk | OAuth 授权码（需自建开放平台应用，回调填 `oob`）<br>OAuth auth code (create your own Open Platform app; redirect URI `oob`) | 否（个人应用限制）<br>No (personal-app limit) | 分片上传到 `/apps/<应用名>/`<br>Chunked upload to `/apps/<app name>/` |
-| 夸克网盘<br>Quark | 网页 Cookie<br>Web cookie | 是（可设提取码）<br>Yes (optional password) | 上传后自动创建分享链接<br>Creates a share link after upload |
+| 夸克网盘<br>Quark | 网页 Cookie<br>Web cookie | 是（可设提取码）<br>Yes (optional password) | 上传后自动创建分享链接。目标文件夹可填根目录 `0`、地址栏 `fid`，或根目录下的文件夹名<br>Creates a share link after upload. Target folder accepts root `0`, the `fid` from the URL bar, or a folder name under the drive root |
 
 设置里可为每家网盘开关「导出后自动上传」，并测试连接；导出页也可临时勾选本次要上传的网盘。
 
@@ -256,6 +256,8 @@ In Settings you can toggle “auto-upload after export” per drive and test the
 
 - 底部运行日志，支持一键复制全部日志
 - Run log at the bottom, with one-click copy of all logs
+- 底部提示条定时自动关闭，并带关闭按钮
+- Bottom toasts auto-dismiss on a timer and have a close button
 - 各耗时任务在后台线程执行，界面保持可响应
 - Long tasks run on background threads so the UI stays responsive
 
@@ -284,7 +286,7 @@ pip install -r requirements.txt
 flet pack mcbe_localization_hub.py -n mcbe_localization_hub ^
   -i assets\app_icon.ico --add-data "assets;assets" ^
   --product-name "弧光自动本地化工具" --company-name "ARCStudio" ^
-  --product-version "1.1.0" --file-version "1.1.0" ^
+  --product-version "1.1.1" --file-version "1.1.1" ^
   --hidden-import openai --hidden-import httpx -y
 ```
 
@@ -314,13 +316,24 @@ Use the project `.venv` (not a bloated global conda env). Output is in `dist/` (
 
 ## Version
 
-当前版本：**1.1.0**
+当前版本：**1.1.1**
 
-Current version: **1.1.0**
+Current version: **1.1.1**
 
 ### 更新说明
 
 ### Changelog
+
+#### v1.1.1
+
+- **manifest 字面量包名**：`header.name` / `description` 若直接写了模组名（不是 `pack.name`），语言翻译步骤会单独汉化名称并加上署名后缀
+- **Literal manifest pack names**: if `header.name` / `description` is a hardcoded pack title (not `pack.name`), the language-file step translates it and appends the credit suffix
+- **脚本 dropdown 选项**：`.dropdown()` 选项数组里的字符串也会本地化（不再只翻标题）
+- **Script dropdown options**: strings inside `.dropdown()` option arrays are localized (not just the label)
+- **夸克目标文件夹**：除 `fid` 外可填根目录下的文件夹名；连接测试会校验目标目录
+- **Quark target folder**: besides `fid`, a folder name under the drive root is accepted; connection test validates the target directory
+- **提示条**：底部 toast 会定时关闭，并带关闭按钮，避免一直挡住界面
+- **Toasts**: bottom toasts auto-dismiss and include a close button so they no longer stay on screen
 
 #### v1.1.0
 

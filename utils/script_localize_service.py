@@ -2,7 +2,7 @@
 """行为包脚本提示字符串本地化。
 
 针对 sendMessage / form.title|button|label|body|toggle|… / setActionBar|setTitle|setSubtitle
-以及选项里的 tooltip/placeholderText 等字符串字面量，调用 LLM 只改提示文字，
+以及 dropdown 选项数组、tooltip/placeholderText 等字符串字面量，调用 LLM 只改提示文字，
 保留 § 颜色码、占位符与 ${} 插值。语言键引用（无空格的 a.b.c）与复杂多行模板跳过。
 """
 from __future__ import annotations
@@ -266,11 +266,71 @@ def _is_safe_tip_string(s: str, target_code: str | None = None) -> bool:
     return True
 
 
+def _skip_trivia(text: str, i: int) -> int:
+    n = len(text)
+    while i < n:
+        if text[i] in " \t\r\n":
+            i += 1
+            continue
+        if text[i] == "/" and i + 1 < n:
+            if text[i + 1] == "/":
+                i = _skip_line_comment(text, i + 2)
+                continue
+            if text[i + 1] == "*":
+                i = _skip_block_comment(text, i + 2)
+                continue
+        break
+    return i
+
+
+def _extract_call_tip_strings(text: str, after_open_paren: int) -> list[tuple[int, int, str]]:
+    """
+    从一次提示 API 调用的实参里提取玩家可见字符串：
+    - 顶层字符串实参（label / title / body）
+    - 顶层数组里的字符串（dropdown 的 options）
+    对象字面量内的字段交给 TIP_PROP_RE，避免误伤 defaultValue 等。
+    """
+    hits: list[tuple[int, int, str]] = []
+    i = after_open_paren
+    n = len(text)
+    paren = 1
+    bracket = 0
+    brace = 0
+    while i < n and paren > 0:
+        i = _skip_trivia(text, i)
+        if i >= n:
+            break
+        ch = text[i]
+        if ch in "'\"`":
+            parsed = _parse_string_literal(text, i)
+            if not parsed:
+                break
+            content, c0, c1, _quote = parsed
+            if brace == 0 and paren == 1 and bracket <= 1:
+                hits.append((c0, c1, content))
+            i = c1 + 1
+            continue
+        if ch == "(":
+            paren += 1
+        elif ch == ")":
+            paren -= 1
+        elif ch == "[":
+            bracket += 1
+        elif ch == "]":
+            bracket = max(0, bracket - 1)
+        elif ch == "{":
+            brace += 1
+        elif ch == "}":
+            brace = max(0, brace - 1)
+        i += 1
+    return hits
+
+
 def extract_tip_strings(
     source: str, target_code: str | None = None
 ) -> list[tuple[int, int, str]]:
     """
-    提取脚本中提示调用的首个字符串实参，以及 tooltip 等选项字段。
+    提取脚本中提示调用的字符串实参（含 dropdown 选项数组），以及 tooltip 等选项字段。
     返回 [(内容起始, 内容结束, 原文内容), ...]，按出现顺序；同位置不重复。
     """
     hits: list[tuple[int, int, str]] = []
@@ -286,11 +346,8 @@ def extract_tip_strings(
         hits.append((c0, c1, content))
 
     for m in TIP_METHOD_RE.finditer(source):
-        parsed = _parse_string_literal(source, m.end())
-        if not parsed:
-            continue
-        content, c0, c1, _quote = parsed
-        add(c0, c1, content)
+        for c0, c1, content in _extract_call_tip_strings(source, m.end()):
+            add(c0, c1, content)
 
     for m in TIP_PROP_RE.finditer(source):
         parsed = _parse_string_literal(source, m.end())

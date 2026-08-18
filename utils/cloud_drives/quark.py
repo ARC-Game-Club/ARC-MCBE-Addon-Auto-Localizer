@@ -37,6 +37,13 @@ def _merge_cookie(old: str, resp: httpx.Response) -> str:
     return old.rstrip("; ") + f"; __puus={puus}"
 
 
+def _looks_like_fid(value: str) -> bool:
+    """夸克文件夹 ID 是根目录 0，或一长串字母数字；中文名等一律当文件夹名。"""
+    if value == "0":
+        return True
+    return bool(re.fullmatch(r"[0-9a-zA-Z]{16,}", value))
+
+
 def _oss_url(pre: dict, obj_key: str) -> str:
     bucket = pre.get("bucket") or ""
     raw = str(pre.get("upload_url") or "")
@@ -72,7 +79,11 @@ class QuarkDrive(CloudDrive):
     def config_fields(self) -> list[ConfigField]:
         return [
             ConfigField("cookie", "Cookie", "password", hint="从 pan.quark.cn 开发者工具复制，不要发到聊天里"),
-            ConfigField("parent_fid", "目标文件夹 ID", hint="根目录填 0；打开文件夹后从地址栏复制 fid"),
+            ConfigField(
+                "parent_fid",
+                "目标文件夹 ID 或名称",
+                hint="根目录填 0；也可填根目录下的文件夹名。更稳妥：打开文件夹后从地址栏复制 fid",
+            ),
             ConfigField("share_password", "分享提取码（可空）", hint="留空=公开链接"),
         ]
 
@@ -121,13 +132,51 @@ class QuarkDrive(CloudDrive):
             raise CloudDriveError(data.get("message") or f"夸克错误 code={data.get('code')}")
         return data
 
+    def _list_dir(self, client: httpx.Client, pdir_fid: str, *, size: int = 100) -> list[dict]:
+        data = self._api(
+            client,
+            "/file/sort",
+            method="GET",
+            params={
+                "pdir_fid": pdir_fid,
+                "_page": "1",
+                "_size": str(size),
+                "_fetch_total": "1",
+                "_sort": "file_type:asc,file_name:asc",
+            },
+        )
+        return list((data.get("data") or {}).get("list") or [])
+
+    def _resolve_parent_fid(self, client: httpx.Client) -> str:
+        raw = (self.cfg.get("parent_fid") or "0").strip() or "0"
+        if _looks_like_fid(raw):
+            return raw
+        items = self._list_dir(client, "0")
+        matches = [
+            it for it in items
+            if (it.get("dir") or it.get("file_type") == 0) and it.get("file_name") == raw
+        ]
+        if not matches:
+            raise CloudDriveError(
+                f"找不到名为「{raw}」的文件夹。请填网盘根目录下的文件夹名，"
+                "或打开该文件夹后从地址栏复制 fid（不要把显示名当成 ID）"
+            )
+        return str(matches[0].get("fid") or "")
+
     def test_connection(self) -> str:
         if not self.is_authorized():
             raise CloudDriveError("请先填写 Cookie")
         with httpx.Client(timeout=30, follow_redirects=True) as client:
             data = self._api(client, "/member", method="GET")
+            fid = self._resolve_parent_fid(client)
+            if fid != "0":
+                self._list_dir(client, fid, size=1)
         info = data.get("data") or {}
-        return info.get("nickname") or info.get("member_name") or "夸克网盘账号"
+        name = info.get("nickname") or info.get("member_name") or "夸克网盘账号"
+        raw = (self.cfg.get("parent_fid") or "0").strip() or "0"
+        if raw != fid:
+            return f"{name} · 文件夹「{raw}」"
+        return name
 
     def upload(self, local_path: Path, log=None) -> UploadResult:
         local_path = Path(local_path)
@@ -140,7 +189,6 @@ class QuarkDrive(CloudDrive):
             if log:
                 log(msg)
 
-        parent = (self.cfg.get("parent_fid") or "0").strip() or "0"
         mime, _ = mimetypes.guess_type(local_path.name)
         mime = mime or "application/octet-stream"
         size = local_path.stat().st_size
@@ -158,6 +206,7 @@ class QuarkDrive(CloudDrive):
 
         now_ms = int(time.time() * 1000)
         with httpx.Client(timeout=180, follow_redirects=True) as client:
+            parent = self._resolve_parent_fid(client)
             pre_full = self._api(
                 client,
                 "/file/upload/pre",
