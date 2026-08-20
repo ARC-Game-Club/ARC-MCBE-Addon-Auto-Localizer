@@ -210,7 +210,9 @@ class HubApp:
             self._tabs_pack_key = None
             self._update_status()
 
-        settings = SettingsView(self.page, self.config, on_saved=on_saved)
+        settings = SettingsView(
+            self.page, self.config, on_saved=on_saved, file_picker=self.file_picker
+        )
         self._body.content = settings.root
         self._body.padding = 16
         self.page.update()

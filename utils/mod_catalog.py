@@ -2,11 +2,11 @@
 """扫描本地模组包，并按 manifest UUID 依赖配对资源包 / 行为包。"""
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from .json_io import read_json_file
 from .pack_rename_service import get_pack_roots, resolve_pack_display_name
 
 _SUFFIX_RE = re.compile(r"(?:\s*[\[(_-]?\s*(BP|RP)\s*[\])]?)$", re.IGNORECASE)
@@ -55,13 +55,6 @@ class ModEntry:
         return out
 
 
-def _read_json(path: Path):
-    try:
-        return json.loads(path.read_text(encoding="utf-8-sig"))
-    except (OSError, json.JSONDecodeError, UnicodeError):
-        return None
-
-
 def _dep_uuids(data: dict) -> set[str]:
     deps = data.get("dependencies") or []
     if isinstance(deps, dict):
@@ -94,7 +87,7 @@ def scan_packs(
             mf = child / "manifest.json"
             if not mf.is_file():
                 continue
-            data = _read_json(mf)
+            data = read_json_file(mf)
             if not isinstance(data, dict):
                 continue
             header = data.get("header") or {}

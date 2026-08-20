@@ -9,6 +9,7 @@ import flet as ft
 from ..cloud_drives import CloudDrive, CloudDriveError, drivers_from
 from ..languages import DEFAULT_CODE, LANGUAGES, credit_suffix
 from ..llm_service import make_client
+from ..paths import get_minecraft_base_dir
 from .base_tab import BaseTab
 from .components import SectionCard, error_toast, toast
 
@@ -133,9 +134,10 @@ class _DrivePanel:
 
 
 class SettingsView(BaseTab):
-    def __init__(self, page: ft.Page, config, on_saved=None):
+    def __init__(self, page: ft.Page, config, on_saved=None, file_picker: ft.FilePicker | None = None):
         super().__init__(page, config)
         self.on_saved = on_saved
+        self.file_picker = file_picker
         current_code = (config.get("target_language") or DEFAULT_CODE).strip() or DEFAULT_CODE
         self.lang_dropdown = ft.Dropdown(
             label="目标语言",
@@ -152,6 +154,19 @@ class SettingsView(BaseTab):
             label="默认本地化者名称",
             value=credit,
             hint_text=f"包名后显示为 {credit_suffix(current_code, '名称')}，默认 DEVILENMO",
+        )
+        default_mods = str(get_minecraft_base_dir())
+        self.mods_base_field = ft.TextField(
+            label="模组根目录（留空=默认）",
+            value=str(config.get("mods_base_dir") or ""),
+            hint_text=default_mods,
+            expand=True,
+        )
+        self.mods_base_hint = ft.Text(
+            "应指向含 resource_packs / behavior_packs / development_* 的目录"
+            f"（默认：{default_mods}）",
+            size=12,
+            color=ft.Colors.ON_SURFACE_VARIANT,
         )
         self.text_base = ft.TextField(label="Base URL", value=config.get("text_llm", "base_url"), expand=True)
         self.text_key = ft.TextField(label="API Key", value=config.get("text_llm", "api_key"), password=True, can_reveal_password=True, expand=True)
@@ -177,6 +192,26 @@ class SettingsView(BaseTab):
                     "配置目标语言、本地化者与 AI 接口，改完点击「保存配置」生效。",
                     size=13,
                     color=ft.Colors.ON_SURFACE_VARIANT,
+                ),
+                SectionCard(
+                    "模组扫描目录",
+                    self.mods_base_hint,
+                    ft.Row(
+                        controls=[
+                            self.mods_base_field,
+                            ft.OutlinedButton(
+                                "浏览…",
+                                icon=ft.Icons.FOLDER_OPEN,
+                                on_click=self._browse_mods_base,
+                            ),
+                            ft.TextButton(
+                                "恢复默认",
+                                on_click=lambda e: self._clear_mods_base(),
+                            ),
+                        ],
+                        spacing=8,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    ),
                 ),
                 SectionCard("本地化目标语言", self.lang_dropdown),
                 SectionCard("本地化者署名", self.credit_field),
@@ -215,12 +250,33 @@ class SettingsView(BaseTab):
             expand=True,
         )
 
+    def _clear_mods_base(self) -> None:
+        self.mods_base_field.value = ""
+        try:
+            self.mods_base_field.update()
+        except Exception:
+            pass
+
+    async def _browse_mods_base(self, e) -> None:
+        if self.file_picker is None:
+            error_toast(self.page, "当前环境无法打开文件夹选择器")
+            return
+        initial = (self.mods_base_field.value or "").strip() or str(get_minecraft_base_dir())
+        path = await self.file_picker.get_directory_path(
+            dialog_title="选择模组根目录（com.mojang 或同等结构）",
+            initial_directory=initial,
+        )
+        if path:
+            self.mods_base_field.value = path
+            self.mods_base_field.update()
+
     def _gather(self) -> None:
         credit = (self.credit_field.value or "").strip() or "DEVILENMO"
         self.credit_field.value = credit
         code = (self.lang_dropdown.value or DEFAULT_CODE).strip() or DEFAULT_CODE
         self.config.set(code, "target_language")
         self.config.set(credit, "translator_credit")
+        self.config.set((self.mods_base_field.value or "").strip(), "mods_base_dir")
         self.config.set((self.text_base.value or "").strip(), "text_llm", "base_url")
         self.config.set((self.text_key.value or "").strip(), "text_llm", "api_key")
         self.config.set((self.text_model.value or "").strip(), "text_llm", "model")

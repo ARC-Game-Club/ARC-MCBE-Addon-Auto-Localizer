@@ -31,13 +31,21 @@ def get_legacy_app_data_dirs() -> list[Path]:
 
 
 def get_minecraft_base_dir() -> Path:
-    """获取 Minecraft Bedrock com.mojang 目录。"""
+    """获取 Minecraft Bedrock 默认 com.mojang 目录。"""
     user_profile = os.getenv("USERPROFILE") or os.path.expanduser("~")
     return (
         Path(user_profile)
         / "AppData" / "Roaming" / "Minecraft Bedrock"
         / "Users" / "Shared" / "games" / "com.mojang"
     )
+
+
+def resolve_mods_base_dir(custom: str | None = None) -> Path:
+    """模组扫描根目录：自定义路径非空则用之，否则默认 com.mojang。"""
+    custom = (custom or "").strip()
+    if custom:
+        return Path(custom).expanduser()
+    return get_minecraft_base_dir()
 
 
 def get_behavior_packs_path() -> Path:

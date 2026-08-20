@@ -5,7 +5,7 @@
 # ARC MCBE Addon Auto Localizer
 
 [![Codacy Grade](https://app.codacy.com/project/badge/Grade/077e44f1b31948caa7f55e909507df1e)](https://app.codacy.com/gh/ARC-Minecraft/ARC-MCBE-Addon-Auto-Localizer/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
-[![Version](https://img.shields.io/badge/version-v1.1.1-blue)](https://github.com/ARC-Minecraft/ARC-MCBE-Addon-Auto-Localizer)
+[![Version](https://img.shields.io/badge/version-v1.2.0-blue)](https://github.com/ARC-Minecraft/ARC-MCBE-Addon-Auto-Localizer)
 [![Python](https://img.shields.io/badge/python-3.12+-blue?logo=python&logoColor=white)](https://www.python.org/)
 [![Flet](https://img.shields.io/badge/Flet-0.86-black)](https://flet.dev/)
 [![License](https://img.shields.io/github/license/ARC-Minecraft/ARC-MCBE-Addon-Auto-Localizer)](LICENSE)
@@ -45,8 +45,8 @@ Short name: **ARC Auto Localizer**
 - **Email**: DEVILENMO@gmail.com
 - **组织**: [ARC Minecraft](https://github.com/ARC-Minecraft) / ARCStudio
 - **Org**: [ARC Minecraft](https://github.com/ARC-Minecraft) / ARCStudio
-- **版本**: 1.1.1
-- **Version**: 1.1.1
+- **版本**: 1.2.0
+- **Version**: 1.2.0
 - **推荐 Python 版本**: 3.12+
 - **Recommended Python**: 3.12+
 - **UI 框架**: Flet 0.86
@@ -62,14 +62,14 @@ Short name: **ARC Auto Localizer**
 1. Open [Releases](https://github.com/ARC-Minecraft/ARC-MCBE-Addon-Auto-Localizer/releases) and download the latest `exe`
 2. 双击运行（Windows，无需安装 Python）
 2. Double-click to run (Windows; Python is not required)
-3. 右上角「设置」选择**本地化目标语言**，并填写文本 / 图片 LLM 的 Base URL、API Key（及可选代理）
-3. Open **Settings** (top right), pick the **target language**, and fill in text / image LLM Base URL, API Key, and optional proxy
+3. 右上角「设置」选择**本地化目标语言**，填写文本 / 图片 LLM；若模组不在默认路径，可在「模组扫描目录」自定义（留空仍用默认 `com.mojang`）
+3. Open **Settings** (top right), pick the **target language**, and fill in text / image LLM settings. If addons are not under the default path, set **Mods scan directory** (leave empty for default `com.mojang`)
 4. 在首屏选择要处理的模组，进入工具箱按步骤操作
 4. On the home screen, select an addon and follow the toolbox steps
 
-本机需已安装 Minecraft Bedrock，工具会读取：
+本机需已安装 Minecraft Bedrock。默认读取：
 
-Minecraft Bedrock must be installed locally. The tool reads:
+Minecraft Bedrock must be installed locally. By default the tool reads:
 
 ```
 %APPDATA%\Minecraft Bedrock\Users\Shared\games\com.mojang\
@@ -151,7 +151,7 @@ Entering this page auto-formats JSON / JS (unchanged files are not rewritten).
 | 步骤 / Step | 说明 / Description |
 |------|------|
 | Display Name 标准化<br>Display Name normalization | 扫描 JSON 中的 `minecraft:display_name`：能解析出 `minecraft:item` / `entity` / `block` + `identifier` 时，把 value 改成 `item.ns:id.name` / `entity.ns:id.name` / `tile.ns:id.name`，并把英文原文写入 `en_US.lang` 与目标语言 `.lang`；无法推导的条目回退为 LLM 直译写回 value<br>Scan `minecraft:display_name` in JSON. When `minecraft:item` / `entity` / `block` plus `identifier` can be resolved, rewrite the value to `item.ns:id.name` / `entity.ns:id.name` / `tile.ns:id.name`, and append the English source to `en_US.lang` and the target `.lang`. Entries that cannot be derived fall back to LLM in-place translation. |
-| 语言文件翻译<br>Language-file translation | 确保目标语言在 `languages.json`、从英文 lang 复制并调用 LLM 批量翻译条目（与 `en_US` 相同的条目视为未译）。若 `manifest.header.name` / `description` 是字面量（不是 `pack.name`），一并翻译名称并加上署名后缀<br>Ensure the target language is in `languages.json`, copy from the English lang file, and batch-translate with the LLM (entries still identical to `en_US` are treated as untranslated). Literal `manifest.header.name` / `description` (not `pack.name`) are translated too, and the credit suffix is appended to the name. |
+| 语言文件翻译<br>Language-file translation | 确保目标语言在 `languages.json`、从英文 lang 复制并调用 LLM 批量翻译条目（与 `en_US` 相同的条目视为未译）。若 `manifest.header.name` / `description` 是字面量，先改成 `pack.name` / `pack.description` 并写入语言文件再翻译<br>Ensure the target language is in `languages.json`, copy from the English lang file, and batch-translate with the LLM (entries still identical to `en_US` are treated as untranslated). Literal `manifest.header.name` / `description` are rewritten to `pack.name` / `pack.description` and moved into `.lang` before translation. |
 | 脚本提示本地化<br>Script-tip localization | 本地化 `sendMessage` / `form.title\|button\|label\|body\|toggle\|dropdown\|…`、`setActionBar`、`tooltip` 等玩家可见字符串，**含 dropdown 选项数组**；跳过语言键与含 `.map/.join` 的复杂多行模板；写入前 `node --check` 校验，失败自动回退<br>Localize player-visible strings such as `sendMessage`, form `title\|button\|label\|body\|toggle\|dropdown\|…`, `setActionBar`, and `tooltip`, **including dropdown option arrays**. Skip lang keys and complex multiline templates with `.map/.join`. Validate with `node --check` before write; roll back on failure. |
 | 本地化者署名<br>Localizer credit | 在包名后追加按语言变化的署名后缀，默认 DEVILENMO，可在设置中改<br>Append a language-specific credit suffix to the pack name. Default is DEVILENMO; changeable in Settings. |
 | 一键本地化<br>One-click localize | 按顺序执行：标准化 → 语言 → 脚本 → 署名<br>Runs in order: normalize → language files → scripts → credit |
@@ -286,7 +286,7 @@ pip install -r requirements.txt
 flet pack mcbe_localization_hub.py -n mcbe_localization_hub ^
   -i assets\app_icon.ico --add-data "assets;assets" ^
   --product-name "弧光自动本地化工具" --company-name "ARCStudio" ^
-  --product-version "1.1.1" --file-version "1.1.1" ^
+  --product-version "1.2.0" --file-version "1.2.0" ^
   --hidden-import openai --hidden-import httpx -y
 ```
 
@@ -316,18 +316,27 @@ Use the project `.venv` (not a bloated global conda env). Output is in `dist/` (
 
 ## Version
 
-当前版本：**1.1.1**
+当前版本：**1.2.0**
 
-Current version: **1.1.1**
+Current version: **1.2.0**
 
 ### 更新说明
 
 ### Changelog
 
+#### v1.2.0
+
+- **JSONC manifest**：`manifest.json` 允许 `/* */` / `//` 注释（部分模组版权头会导致标准 JSON 解析失败，此前无法被扫描到）
+- **JSONC manifests**: `manifest.json` may include `/* */` / `//` comments (copyright headers that broke strict JSON parsing previously made packs invisible)
+- **模组图标预览**：首屏卡片优先显示包内 `pack_icon.png`，没有则用默认 `assets/icon.png`
+- **Mod icon preview**: home cards prefer each pack’s `pack_icon.png`, falling back to default `assets/icon.png`
+- **自定义模组目录**：设置中可指定模组扫描根目录（含 `resource_packs` / `behavior_packs` / `development_*`）；留空仍走默认 `com.mojang`
+- **Custom mods directory**: Settings can override the scan root (must contain `resource_packs` / `behavior_packs` / `development_*`); empty keeps default `com.mojang`
+
 #### v1.1.1
 
-- **manifest 字面量包名**：`header.name` / `description` 若直接写了模组名（不是 `pack.name`），语言翻译步骤会单独汉化名称并加上署名后缀
-- **Literal manifest pack names**: if `header.name` / `description` is a hardcoded pack title (not `pack.name`), the language-file step translates it and appends the credit suffix
+- **manifest 字面量包名**：`header.name` / `description` 若直接写了模组名（不是 `pack.name`），会改成语言键并写入 `.lang`，再按语言文件翻译；署名加在 `pack.name` 上
+- **Literal manifest pack names**: if `header.name` / `description` is a hardcoded pack title (not `pack.name`), rewrite them to lang keys, move the text into `.lang`, then translate; the credit suffix is applied to `pack.name`
 - **脚本 dropdown 选项**：`.dropdown()` 选项数组里的字符串也会本地化（不再只翻标题）
 - **Script dropdown options**: strings inside `.dropdown()` option arrays are localized (not just the label)
 - **夸克目标文件夹**：除 `fid` 外可填根目录下的文件夹名；连接测试会校验目标目录

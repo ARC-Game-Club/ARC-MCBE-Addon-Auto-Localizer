@@ -21,6 +21,7 @@ DEFAULT_CONFIG = {
     "resource_pack_path": "",
     "behavior_pack_path": "",
     "current_mod_name": "",
+    "mods_base_dir": "",
     "translator_credit": "DEVILENMO",
     "target_language": DEFAULT_CODE,
     "export_dir": "",

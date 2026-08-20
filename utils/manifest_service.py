@@ -1,13 +1,12 @@
 # -*- coding: utf-8 -*-
-"""模组 manifest.json 处理（灵动视效 PBR、成就兼容、字面量包名翻译等）。"""
+"""模组 manifest.json 处理（灵动视效 PBR、成就兼容、包名语言键等）。"""
 import json
 import shutil
 from pathlib import Path
 
-from .credit_service import with_credit
+from .json_io import loads_jsonc
+from .lang_files import ensure_texts_dir, upsert_lang_entries
 from .languages import DEFAULT_CODE, strip_credit_suffix
-from .llm_service import translate_lang_batch
-from .text_utils import needs_translation
 
 
 def read_manifest(pack_path: Path):
@@ -16,9 +15,9 @@ def read_manifest(pack_path: Path):
     if not manifest.exists():
         return None, "manifest.json 不存在"
     try:
-        data = json.loads(manifest.read_text(encoding="utf-8"))
+        data = loads_jsonc(manifest.read_text(encoding="utf-8-sig"))
         return data, None
-    except (json.JSONDecodeError, OSError) as e:
+    except (json.JSONDecodeError, OSError, UnicodeError) as e:
         return None, f"读取失败: {e}"
 
 
@@ -122,17 +121,12 @@ _HEADER_LANG_KEYS = {
 }
 
 
-def localize_manifest_header(
-    pack_path: Path,
-    llm_cfg,
-    log,
-    code: str | None = None,
-    lang_label: str = "简体中文",
-    credit: str | None = None,
+def normalize_manifest_header_keys(
+    pack_path: Path, log, code: str | None = None
 ) -> bool:
     """
-    翻译 manifest.header 里直接写死的名称 / 简介（不是 pack.name 那种语言键）。
-    名称翻译后若传入 credit，会一并加上署名后缀。
+    若 header.name / description 是字面量，改成 pack.name / pack.description，
+    并把原文写入语言文件。翻译与署名仍由后续语言文件步骤处理。
     """
     pack_path = Path(pack_path)
     manifest = pack_path / "manifest.json"
@@ -145,37 +139,29 @@ def localize_manifest_header(
         return False
 
     code = (code or DEFAULT_CODE).strip() or DEFAULT_CODE
-    pending: list[tuple[str, str]] = []
-    originals: dict[str, str] = {}
+    entries: dict[str, str] = {}
     for field, lang_key in _HEADER_LANG_KEYS.items():
         raw = header.get(field)
         if not isinstance(raw, str) or not raw.strip():
             continue
         if raw.strip() == lang_key:
             continue
-        base = strip_credit_suffix(raw) if field == "name" else raw
-        if not needs_translation(base, code):
+        value = strip_credit_suffix(raw).strip() if field == "name" else raw.strip()
+        if not value:
             continue
-        pending.append((f"header.{field}", base))
-        originals[field] = raw
+        entries[lang_key] = value
+        header[field] = lang_key
+        log(f"  manifest.{field}: {raw} → {lang_key}")
 
-    if not pending:
+    if not entries:
         return False
 
-    log(f"  翻译 manifest 字面量: {', '.join(originals)}")
-    result = translate_lang_batch(pending, llm_cfg, log, lang_label=lang_label)
-    changed = False
-    for field, old in originals.items():
-        translated = (result.get(f"header.{field}") or "").strip()
-        if not translated or translated == strip_credit_suffix(old):
-            continue
-        if field == "name" and credit:
-            translated = with_credit(translated, credit, code)
-        header[field] = translated
-        log(f"  manifest.{field}: {old} → {translated}")
-        changed = True
-    if not changed:
-        log("  manifest 字面量翻译无变化")
+    texts = ensure_texts_dir(pack_path, code, log)
+    if texts is None:
         return False
+    upsert_lang_entries(texts / "en_US.lang", entries, log)
+    target_lang = texts / f"{code}.lang"
+    if target_lang.is_file():
+        upsert_lang_entries(target_lang, entries, log)
     data["header"] = header
-    return _write_manifest(manifest, data, log, "  已写回 manifest.json")
+    return _write_manifest(manifest, data, log, "  已将包名/简介改为语言键并写回 manifest.json")

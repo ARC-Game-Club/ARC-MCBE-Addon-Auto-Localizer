@@ -2,13 +2,15 @@
 """启动首屏：模组卡片列表。"""
 from __future__ import annotations
 
+from pathlib import Path
+
 import flet as ft
 
 from ..mod_catalog import ModEntry, list_mods
 from ..pack_rename_service import apply_pack_renames, plan_pack_renames
-from ..paths import get_minecraft_base_dir
+from ..paths import resolve_mods_base_dir
 from .components import confirm, error_toast, toast
-from .theme import brand_gradient
+from .theme import ICON_ASSET, brand_gradient
 
 
 class WelcomeView:
@@ -65,11 +67,14 @@ class WelcomeView:
             expand=True,
         )
 
+    def _mods_base(self):
+        return resolve_mods_base_dir(self.config.get("mods_base_dir"))
+
     def reload_mods(self) -> None:
         self.list_view.controls.clear()
-        base = get_minecraft_base_dir()
+        base = self._mods_base()
         if not base.exists():
-            self.count_label.value = "未找到 Minecraft 路径"
+            self.count_label.value = "未找到模组目录"
             self.count_label.color = ft.Colors.ERROR
             self.list_view.controls.append(
                 ft.Text(f"未找到目录:\n{base}", color=ft.Colors.ERROR)
@@ -95,6 +100,15 @@ class WelcomeView:
                 self.list_view.controls.append(self._mod_card(mod))
         self.list_view.update()
         self.count_label.update()
+
+    @staticmethod
+    def _mod_icon_src(mod: ModEntry) -> str:
+        """优先资源包 / 行为包的 pack_icon.png，否则用默认品牌图标。"""
+        for pack in mod.pack_paths():
+            icon = Path(pack) / "pack_icon.png"
+            if icon.is_file():
+                return str(icon)
+        return ICON_ASSET
 
     def _mod_card(self, mod: ModEntry) -> ft.Control:
         badges = []
@@ -124,10 +138,28 @@ class WelcomeView:
             detail_parts.append(f"BP: {mod.behavior_pack.name}")
         detail = "  |  ".join(detail_parts)
 
+        icon = ft.Container(
+            content=ft.Image(
+                src=self._mod_icon_src(mod),
+                width=48,
+                height=48,
+                fit=ft.BoxFit.COVER,
+                border_radius=8,
+                error_content=ft.Image(
+                    src=ICON_ASSET, width=48, height=48, fit=ft.BoxFit.COVER, border_radius=8
+                ),
+            ),
+            width=48,
+            height=48,
+            border_radius=8,
+            clip_behavior=ft.ClipBehavior.HARD_EDGE,
+        )
+
         return ft.Card(
             content=ft.Container(
                 content=ft.Row(
                     controls=[
+                        icon,
                         ft.Column(
                             controls=[
                                 ft.Row(
@@ -144,6 +176,7 @@ class WelcomeView:
                         ),
                         ft.Icon(ft.Icons.CHEVRON_RIGHT),
                     ],
+                    spacing=12,
                     vertical_alignment=ft.CrossAxisAlignment.CENTER,
                 ),
                 padding=14,
@@ -164,9 +197,9 @@ class WelcomeView:
         self.on_enter()
 
     def _organize_pack_names(self) -> None:
-        base = get_minecraft_base_dir()
+        base = self._mods_base()
         if not base.exists():
-            error_toast(self.page, f"未找到 Minecraft 路径:\n{base}")
+            error_toast(self.page, f"未找到模组目录:\n{base}")
             return
         try:
             target = (self.config.get("target_language") or "zh_CN").strip() or "zh_CN"

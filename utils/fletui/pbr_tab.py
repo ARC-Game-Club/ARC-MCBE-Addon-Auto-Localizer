@@ -7,6 +7,7 @@ from pathlib import Path
 
 import flet as ft
 
+from ..json_io import loads_jsonc
 from ..manifest_service import apply_pbr_capability, read_manifest
 from .base_tab import BaseTab
 from .components import SectionCard, confirm, error_toast
@@ -138,7 +139,7 @@ class PbrTab(BaseTab):
             return
         mf = rp / "manifest.json"
         try:
-            data = json.loads(mf.read_text(encoding="utf-8"))
+            data = loads_jsonc(mf.read_text(encoding="utf-8-sig"))
             caps = data.get("capabilities", [])
             if "pbr" in caps:
                 caps.remove("pbr")

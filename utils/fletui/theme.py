@@ -9,11 +9,11 @@ import flet as ft
 from .. import PROJECT_ROOT
 
 APP_TITLE = "弧光自动本地化工具"
-APP_VERSION = "1.1.1"
-ICON_ASSET = "ARC汉化组.png"
+APP_VERSION = "1.2.0"
+ICON_ASSET = "icon.png"
 WINDOW_ICON_FILE = "app_icon.ico"
 
-# 取自 assets/ARC汉化组.png 实际像素
+# 取自 assets/icon.png 实际像素
 BRAND_INDIGO = "#24266D"
 BRAND_VIOLET = "#5C256E"
 BRAND_MAGENTA = "#A7205B"

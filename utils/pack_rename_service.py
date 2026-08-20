@@ -2,12 +2,12 @@
 """按 manifest / 语言文件中的包名，整理资源包与行为包文件夹名称。"""
 from __future__ import annotations
 
-import json
 import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from .json_io import read_json_file
 from .lang_files import parse_lang_content
 from .paths import get_minecraft_base_dir
 
@@ -49,13 +49,6 @@ def get_pack_roots(base_dir: Path | None = None) -> list[tuple[Path, str]]:
     return roots
 
 
-def _read_json(path: Path):
-    try:
-        return json.loads(path.read_text(encoding="utf-8-sig"))
-    except (OSError, json.JSONDecodeError, UnicodeError):
-        return None
-
-
 def _read_lang_key(lang_file: Path, key: str) -> str | None:
     """从单个 .lang 读取 key 的值。"""
     if not lang_file.is_file():
@@ -93,7 +86,7 @@ def _lookup_lang_value(
     # 2) languages.json 顺序
     langs_path = texts_dir / "languages.json"
     if langs_path.is_file():
-        langs = _read_json(langs_path)
+        langs = read_json_file(langs_path)
         if isinstance(langs, list):
             for item in langs:
                 item_code = str(item).strip()
@@ -134,7 +127,7 @@ def resolve_pack_display_name(
     manifest = pack_dir / "manifest.json"
     if not manifest.is_file():
         return None, "无 manifest.json"
-    data = _read_json(manifest)
+    data = read_json_file(manifest)
     if not isinstance(data, dict):
         return None, "manifest 解析失败"
     header = data.get("header") or {}

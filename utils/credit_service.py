@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from .json_io import loads_jsonc
 from .languages import DEFAULT_CODE, credit_suffix, strip_credit_suffix
 
 
@@ -63,7 +64,7 @@ def _update_manifest_name(pack_dir: Path, credit: str, code: str, log) -> bool:
     if not mf.is_file():
         return False
     try:
-        data = json.loads(mf.read_text(encoding="utf-8-sig"))
+        data = loads_jsonc(mf.read_text(encoding="utf-8-sig"))
     except (OSError, json.JSONDecodeError, UnicodeError) as e:
         log(f"manifest 读取失败: {e}")
         return False
