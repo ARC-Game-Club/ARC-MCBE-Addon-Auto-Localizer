@@ -67,7 +67,7 @@ class BaseTab:
 
     def make_progress_row(self) -> ft.Control:
         self.progress = ft.ProgressBar(value=0, expand=True)
-        self.progress_label = ft.Text("", width=70, size=12)
+        self.progress_label = ft.Text("", width=90, size=12)
         return ft.Row(
             controls=[self.progress, self.progress_label],
             spacing=8,

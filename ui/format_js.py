@@ -16,7 +16,7 @@ except ImportError:
     import jsbeautifier
 
 
-def format_js_file(input_path, output_path=None, quiet=True):
+def format_js_file(input_path, output_path=None, quiet=True, log=None):
     """
     格式化 JavaScript 文件。
 
@@ -24,9 +24,16 @@ def format_js_file(input_path, output_path=None, quiet=True):
         input_path: 输入文件路径
         output_path: 输出文件路径，如果为None则覆盖原文件
         quiet: True 时不刷屏打印（批量规范化默认）
+        log: 可选回调；出错时优先写入日志（便于 UI 显示）
     """
     def _p(msg):
         if not quiet:
+            print(msg)
+
+    def _err(msg):
+        if log:
+            log(msg)
+        else:
             print(msg)
 
     _p(f"正在读取文件: {input_path}")
@@ -35,7 +42,7 @@ def format_js_file(input_path, output_path=None, quiet=True):
         with open(input_path, 'r', encoding='utf-8') as f:
             content = f.read()
     except Exception as e:
-        _p(f"读取文件失败: {e}")
+        _err(f"读取失败: {input_path} ({e})")
         return False
 
     _p(f"文件大小: {len(content)} 字符")
@@ -58,7 +65,7 @@ def format_js_file(input_path, output_path=None, quiet=True):
     try:
         formatted = jsbeautifier.beautify(content, opts)
     except Exception as e:
-        _p(f"格式化失败: {e}")
+        _err(f"JS 格式化失败: {input_path} ({e})")
         return False
 
     # 内容无变化：不写盘、不建 backup
@@ -73,7 +80,7 @@ def format_js_file(input_path, output_path=None, quiet=True):
             with open(backup_path, 'w', encoding='utf-8') as f:
                 f.write(content)
         except Exception as e:
-            _p(f"创建备份失败: {e}")
+            _err(f"创建备份失败: {input_path} ({e})")
             return False
         output_path = input_path
 
@@ -82,7 +89,7 @@ def format_js_file(input_path, output_path=None, quiet=True):
         with open(output_path, 'w', encoding='utf-8') as f:
             f.write(formatted)
     except Exception as e:
-        _p(f"写入文件失败: {e}")
+        _err(f"写入失败: {output_path} ({e})")
         return False
 
     _p("格式化完成！")
@@ -111,7 +118,7 @@ def main():
         print(f"错误: 文件不存在: {input_path}")
         sys.exit(1)
     
-    success = format_js_file(input_path, output_path)
+    success = format_js_file(input_path, output_path, quiet=False)
     
     if success:
         print("\n格式化成功完成！")

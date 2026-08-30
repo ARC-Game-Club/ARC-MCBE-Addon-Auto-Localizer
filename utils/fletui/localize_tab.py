@@ -3,13 +3,18 @@
 from __future__ import annotations
 
 import threading
+import traceback
 from pathlib import Path
 
 import flet as ft
 
 from ..credit_service import apply_credit_to_mod, format_credit_suffix
 from ..display_name_service import standardize_display_names_for_mod
-from ..format_service import format_js_files_in, format_json_files_in
+from ..format_service import (
+    collect_format_targets,
+    format_js_files_in,
+    format_json_files_in,
+)
 from ..lang_files import (
     copy_lang_to_target,
     ensure_language_in_languages,
@@ -147,17 +152,76 @@ class LocalizeTab(BaseTab):
                 return
             self.log("=" * 50)
             self.log("自动规范化 JSON / JS …")
-            total_ok = total_fail = 0
+            self._set_format_label("格式化: 扫描文件…")
+
+            # 先扫完再处理，便于全局进度条；扫描卡住时日志里能看到卡在哪一包
+            targets: list[tuple[str, Path, list, list]] = []
             for label, root in packs:
-                self.log(f"—— {label}: {root.name} ——")
-                ok_j, fail_j = format_json_files_in(root, indent=4, log=self.log)
-                ok_s, fail_s = format_js_files_in(root, log=self.log)
+                name = root.name or str(root)
+                self.log(f"—— {label}: {name} ——")
+                self.log(f"  路径: {root}")
+                try:
+                    jsons, jss = collect_format_targets(root, log=self.log)
+                except Exception as e:
+                    self.log(f"  扫描异常: {e}\n{traceback.format_exc()}")
+                    self._set_format_label(f"格式化扫描失败: {e}", ft.Colors.ERROR)
+                    return
+                targets.append((label, root, jsons, jss))
+
+            grand_total = sum(len(j) + len(s) for _, _, j, s in targets)
+            if grand_total == 0:
+                msg = "格式化完成：无可处理的 JSON/JS"
+                self.log(msg)
+                self._set_format_label(msg, ft.Colors.PRIMARY)
+                self.set_progress(0, 0)
+                return
+
+            def on_progress(done: int, total: int, rel: str) -> None:
+                # 大包文件很多，避免每个文件都刷 UI
+                if done not in (0, total) and done % 8 != 0:
+                    return
+                self.set_progress(done, total)
+                short = Path(rel).name
+                self._set_format_label(f"格式化中 {done}/{total}: {short}")
+
+            total_ok = total_fail = 0
+            offset = 0
+            for label, root, jsons, jss in targets:
+                self.log(f"—— 处理 {label}: JSON {len(jsons)} / JS {len(jss)} ——")
+                ok_j, fail_j = format_json_files_in(
+                    root,
+                    indent=4,
+                    log=self.log,
+                    on_progress=on_progress,
+                    files=jsons,
+                    progress_offset=offset,
+                    progress_total=grand_total,
+                )
+                offset += len(jsons)
+                ok_s, fail_s = format_js_files_in(
+                    root,
+                    log=self.log,
+                    on_progress=on_progress,
+                    files=jss,
+                    progress_offset=offset,
+                    progress_total=grand_total,
+                )
+                offset += len(jss)
                 total_ok += ok_j + ok_s
                 total_fail += fail_j + fail_s
-                self.log(f"  JSON {ok_j} 成功 / {fail_j} 失败；JS {ok_s} 成功 / {fail_s} 失败")
+                self.log(
+                    f"  JSON {ok_j} 成功 / {fail_j} 失败；"
+                    f"JS {ok_s} 成功 / {fail_s} 失败"
+                )
+
+            self.set_progress(grand_total, grand_total)
             msg = f"格式化完成：成功 {total_ok}，失败 {total_fail}"
             self.log(msg)
-            self._set_format_label(msg, ft.Colors.PRIMARY)
+            color = ft.Colors.ERROR if total_fail else ft.Colors.PRIMARY
+            self._set_format_label(msg, color)
+        except Exception as e:
+            self.log(f"规范化异常: {e}\n{traceback.format_exc()}")
+            self._set_format_label(f"格式化失败: {e}", ft.Colors.ERROR)
         finally:
             self._format_ready.set()
 

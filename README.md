@@ -5,7 +5,7 @@
 # ARC MCBE Addon Auto Localizer
 
 [![Codacy Grade](https://app.codacy.com/project/badge/Grade/077e44f1b31948caa7f55e909507df1e)](https://app.codacy.com/gh/ARC-Minecraft/ARC-MCBE-Addon-Auto-Localizer/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
-[![Version](https://img.shields.io/badge/version-v1.2.0-blue)](https://github.com/ARC-Minecraft/ARC-MCBE-Addon-Auto-Localizer)
+[![Version](https://img.shields.io/badge/version-v1.2.1-blue)](https://github.com/ARC-Minecraft/ARC-MCBE-Addon-Auto-Localizer)
 [![Python](https://img.shields.io/badge/python-3.12+-blue?logo=python&logoColor=white)](https://www.python.org/)
 [![Flet](https://img.shields.io/badge/Flet-0.86-black)](https://flet.dev/)
 [![License](https://img.shields.io/github/license/ARC-Minecraft/ARC-MCBE-Addon-Auto-Localizer)](LICENSE)
@@ -45,8 +45,8 @@ Short name: **ARC Auto Localizer**
 - **Email**: DEVILENMO@gmail.com
 - **组织**: [ARC Minecraft](https://github.com/ARC-Minecraft) / ARCStudio
 - **Org**: [ARC Minecraft](https://github.com/ARC-Minecraft) / ARCStudio
-- **版本**: 1.2.0
-- **Version**: 1.2.0
+- **版本**: 1.2.1
+- **Version**: 1.2.1
 - **推荐 Python 版本**: 3.12+
 - **Recommended Python**: 3.12+
 - **UI 框架**: Flet 0.86
@@ -144,9 +144,9 @@ Effects:
 
 ### ① Addon localization
 
-进入本页后会自动规范化 JSON / JS（内容无变化则跳过写盘）。
+进入本页后会自动规范化 JSON / JS（内容无变化则跳过写盘）。规范化时显示进度条与当前文件名；解析/读写失败会写入运行日志（含路径与原因），未捕获异常会打印完整 traceback，避免大包或坏文件时界面长时间无反馈。
 
-Entering this page auto-formats JSON / JS (unchanged files are not rewritten).
+Entering this page auto-formats JSON / JS (unchanged files are not rewritten). Progress shows a bar and the current file name; parse/IO failures are written to the run log (path + reason), and uncaught errors include a full traceback so large packs or bad files no longer look like a silent hang.
 
 | 步骤 / Step | 说明 / Description |
 |------|------|
@@ -286,7 +286,7 @@ pip install -r requirements.txt
 flet pack mcbe_localization_hub.py -n mcbe_localization_hub ^
   -i assets\app_icon.ico --add-data "assets;assets" ^
   --product-name "弧光自动本地化工具" --company-name "ARCStudio" ^
-  --product-version "1.2.0" --file-version "1.2.0" ^
+  --product-version "1.2.1" --file-version "1.2.1" ^
   --hidden-import openai --hidden-import httpx -y
 ```
 
@@ -316,13 +316,22 @@ Use the project `.venv` (not a bloated global conda env). Output is in `dist/` (
 
 ## Version
 
-当前版本：**1.2.0**
+当前版本：**1.2.1**
 
-Current version: **1.2.0**
+Current version: **1.2.1**
 
 ### 更新说明
 
 ### Changelog
+
+#### v1.2.1
+
+- **规范化进度**：进本地化页自动格式化 JSON / JS 时显示进度条与当前文件名；先扫描再处理，日志会打印完整包路径与文件数量
+- **Format progress**: auto JSON / JS formatting on the localize page shows a progress bar and current file name; packs are scanned first, and the log prints full pack paths plus file counts
+- **失败可见**：解析失败、读写/备份失败写入运行日志；规范化未捕获异常打印 traceback，不再只 `print` 到控制台导致界面像卡住
+- **Visible failures**: parse / read-write / backup errors go to the run log; uncaught format errors print a traceback instead of only `print`ing to the console (which looked like a hang)
+- **JSON 无变化跳过写盘**：与 JS 一致，内容已规范则不建 backup、不重写，大包更快
+- **Skip unchanged JSON**: same as JS—already-normalized files skip backup and rewrite, which is faster on large packs
 
 #### v1.2.0
 
