@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from .json_io import loads_jsonc
+from .lang_files import read_lang_map, upsert_lang_entries
 from .languages import DEFAULT_CODE, credit_suffix, strip_credit_suffix
 
 
@@ -93,8 +94,7 @@ def apply_translator_credit(
 ) -> bool:
     """
     对单个包应用署名：
-    - 优先改目标语言 .lang 的 pack.name
-    - 否则改 languages.json 第一个语言 / 任意含 pack.name 的 .lang
+    - 改目标语言 .lang 的 pack.name（若缺失则从 en_US 补全）
     - 若 manifest.header.name 不是 pack.name，则直接改 manifest
     """
     code = (code or DEFAULT_CODE).strip() or DEFAULT_CODE
@@ -105,27 +105,20 @@ def apply_translator_credit(
     ok = False
     texts = pack_dir / "texts"
     if texts.is_dir():
-        candidates: list[Path] = []
-        target = texts / f"{code}.lang"
-        if target.is_file():
-            candidates.append(target)
-        langs_path = texts / "languages.json"
-        if langs_path.is_file():
-            try:
-                langs = json.loads(langs_path.read_text(encoding="utf-8-sig"))
-                if isinstance(langs, list) and langs:
-                    first = texts / f"{str(langs[0]).strip()}.lang"
-                    if first.is_file() and first not in candidates:
-                        candidates.append(first)
-            except (OSError, json.JSONDecodeError, UnicodeError):
-                pass
-        for lang_file in sorted(texts.glob("*.lang")):
-            if lang_file not in candidates:
-                candidates.append(lang_file)
-        for lang_file in candidates:
-            if _update_lang_pack_name(lang_file, credit, code, log):
-                ok = True
-                break
+        target_lang = texts / f"{code}.lang"
+        en_us = texts / "en_US.lang"
+        if target_lang.is_file() and en_us.is_file():
+            en_map = read_lang_map(en_us)
+            target_map = read_lang_map(target_lang)
+            missing = {
+                k: en_map[k]
+                for k in ("pack.name", "pack.description")
+                if k in en_map and k not in target_map
+            }
+            if missing:
+                upsert_lang_entries(target_lang, missing, log)
+        if target_lang.is_file() and _update_lang_pack_name(target_lang, credit, code, log):
+            ok = True
     if _update_manifest_name(pack_dir, credit, code, log):
         ok = True
     if not ok:

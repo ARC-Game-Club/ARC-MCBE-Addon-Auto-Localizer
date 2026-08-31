@@ -9,7 +9,7 @@ import flet as ft
 from .. import PROJECT_ROOT
 
 APP_TITLE = "弧光自动本地化工具"
-APP_VERSION = "1.2.1"
+APP_VERSION = "1.2.2"
 ICON_ASSET = "icon.png"
 WINDOW_ICON_FILE = "app_icon.ico"
 

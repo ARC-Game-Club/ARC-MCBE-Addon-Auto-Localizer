@@ -8,6 +8,9 @@ JSON 格式化脚本
 import json
 import os
 import sys
+from pathlib import Path
+
+SKIP = "skip"
 
 
 def format_json_file(input_path, output_path=None, indent=4, quiet=True, log=None):
@@ -31,21 +34,45 @@ def format_json_file(input_path, output_path=None, indent=4, quiet=True, log=Non
         else:
             print(msg)
 
+    def _skip(msg):
+        if log:
+            log(msg)
+
     _p(f"正在读取文件: {input_path}")
 
     try:
-        with open(input_path, "r", encoding="utf-8") as f:
+        with open(input_path, "r", encoding="utf-8-sig") as f:
             content = f.read()
-    except Exception as e:
+    except UnicodeDecodeError:
+        name = Path(input_path).name
+        _skip(
+            f"  跳过: {name}（非 UTF-8 文本，可能是 marketplace 缓存/二进制文件）"
+        )
+        return SKIP
+    except OSError as e:
         _err(f"读取失败: {input_path} ({e})")
         return False
 
     _p(f"文件大小: {len(content)} 字符")
     _p("正在解析并格式化...")
 
+    stripped = content.lstrip("\ufeff").lstrip()
+    if not stripped:
+        name = Path(input_path).name
+        _skip(f"  跳过: {name}（空文件）")
+        return SKIP
+    if stripped[0] not in "{[":
+        name = Path(input_path).name
+        _skip(f"  跳过: {name}（非明文 JSON，可能是 marketplace 加密/缓存）")
+        return SKIP
+
     try:
         data = json.loads(content)
     except json.JSONDecodeError as e:
+        name = Path(input_path).name
+        if e.pos == 0:
+            _skip(f"  跳过: {name}（非明文 JSON，可能是 marketplace 加密/缓存）")
+            return SKIP
         _err(f"JSON 解析失败: {input_path} ({e})")
         return False
 

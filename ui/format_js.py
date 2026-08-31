@@ -7,6 +7,7 @@ JavaScript 格式化脚本
 
 import os
 import sys
+from pathlib import Path
 
 try:
     import jsbeautifier
@@ -14,6 +15,8 @@ except ImportError:
     print("正在安装 jsbeautifier...")
     os.system(f"{sys.executable} -m pip install jsbeautifier")
     import jsbeautifier
+
+SKIP = "skip"
 
 
 def format_js_file(input_path, output_path=None, quiet=True, log=None):
@@ -36,12 +39,22 @@ def format_js_file(input_path, output_path=None, quiet=True, log=None):
         else:
             print(msg)
 
+    def _skip(msg):
+        if log:
+            log(msg)
+
     _p(f"正在读取文件: {input_path}")
 
     try:
-        with open(input_path, 'r', encoding='utf-8') as f:
+        with open(input_path, "r", encoding="utf-8-sig") as f:
             content = f.read()
-    except Exception as e:
+    except UnicodeDecodeError:
+        name = Path(input_path).name
+        _skip(
+            f"  跳过: {name}（非 UTF-8 文本，可能是 marketplace 缓存/二进制文件）"
+        )
+        return SKIP
+    except OSError as e:
         _err(f"读取失败: {input_path} ({e})")
         return False
 

@@ -212,6 +212,28 @@ def upsert_lang_entries(lang_path: Path, mapping: dict[str, str], log) -> int:
     return len(to_add)
 
 
+def sync_missing_keys_from_en_us(texts_dir: Path, code: str, log) -> int:
+    """
+    将 en_US.lang 中有而目标 .lang 中没有的 key 复制过去（值为英文源），
+    便于后续翻译步骤处理 pack.name 等遗漏条目。
+    """
+    code = (code or DEFAULT_CODE).strip() or DEFAULT_CODE
+    texts_dir = Path(texts_dir)
+    en_us = texts_dir / "en_US.lang"
+    target = texts_dir / f"{code}.lang"
+    if not en_us.is_file() or not target.is_file():
+        return 0
+    en_map = read_lang_map(en_us)
+    target_map = read_lang_map(target)
+    missing = {k: v for k, v in en_map.items() if k not in target_map}
+    if not missing:
+        return 0
+    n = upsert_lang_entries(target, missing, log)
+    if n:
+        log(f"  从 en_US 补全 {n} 条缺失 key（含 pack.name 等）")
+    return n
+
+
 def rebuild_lang_lines(orig_text: str, parsed, translated: dict) -> str:
     """基于原始文本重建，entry 行用翻译值替换 value，保留末尾换行。"""
     out = []

@@ -48,6 +48,15 @@ def resolve_mods_base_dir(custom: str | None = None) -> Path:
     return get_minecraft_base_dir()
 
 
+def resolve_pack_dir(raw: str | None) -> Path | None:
+    """解析配置中的包路径；空字符串不得变成当前目录 `.`。"""
+    raw = (raw or "").strip()
+    if not raw:
+        return None
+    p = Path(raw)
+    return p if p.is_dir() else None
+
+
 def get_behavior_packs_path() -> Path:
     """获取 Minecraft Bedrock behavior_packs 目录路径。"""
     return get_minecraft_base_dir() / "behavior_packs"

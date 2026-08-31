@@ -22,11 +22,13 @@ from ..lang_files import (
     parse_lang_content,
     read_lang_map,
     rebuild_lang_lines,
+    sync_missing_keys_from_en_us,
 )
 from ..languages import DEFAULT_CODE, label_of
 from ..llm_service import translate_lang_batch
 from ..manifest_service import normalize_manifest_header_keys
 from ..pack_rename_service import sync_mod_pack_folder_names
+from ..paths import resolve_pack_dir
 from ..script_localize_service import localize_scripts_in
 from ..text_utils import needs_translation
 from .base_tab import BaseTab
@@ -60,12 +62,10 @@ class LocalizeTab(BaseTab):
         self._format_ready.wait()
 
     def _rp(self) -> Path | None:
-        p = Path(self.config.get("resource_pack_path").strip())
-        return p if str(p) and p.is_dir() else None
+        return resolve_pack_dir(self.config.get("resource_pack_path"))
 
     def _bp(self) -> Path | None:
-        p = Path(self.config.get("behavior_pack_path").strip())
-        return p if str(p) and p.is_dir() else None
+        return resolve_pack_dir(self.config.get("behavior_pack_path"))
 
     def _packs(self) -> list[tuple[str, Path]]:
         out = []
@@ -184,11 +184,11 @@ class LocalizeTab(BaseTab):
                 short = Path(rel).name
                 self._set_format_label(f"格式化中 {done}/{total}: {short}")
 
-            total_ok = total_fail = 0
+            total_ok = total_fail = total_skip = 0
             offset = 0
             for label, root, jsons, jss in targets:
                 self.log(f"—— 处理 {label}: JSON {len(jsons)} / JS {len(jss)} ——")
-                ok_j, fail_j = format_json_files_in(
+                ok_j, fail_j, skip_j = format_json_files_in(
                     root,
                     indent=4,
                     log=self.log,
@@ -198,7 +198,7 @@ class LocalizeTab(BaseTab):
                     progress_total=grand_total,
                 )
                 offset += len(jsons)
-                ok_s, fail_s = format_js_files_in(
+                ok_s, fail_s, skip_s = format_js_files_in(
                     root,
                     log=self.log,
                     on_progress=on_progress,
@@ -209,13 +209,14 @@ class LocalizeTab(BaseTab):
                 offset += len(jss)
                 total_ok += ok_j + ok_s
                 total_fail += fail_j + fail_s
+                total_skip += skip_j + skip_s
                 self.log(
-                    f"  JSON {ok_j} 成功 / {fail_j} 失败；"
-                    f"JS {ok_s} 成功 / {fail_s} 失败"
+                    f"  JSON {ok_j} 成功 / {fail_j} 失败 / {skip_j} 跳过；"
+                    f"JS {ok_s} 成功 / {fail_s} 失败 / {skip_s} 跳过"
                 )
 
             self.set_progress(grand_total, grand_total)
-            msg = f"格式化完成：成功 {total_ok}，失败 {total_fail}"
+            msg = f"格式化完成：成功 {total_ok}，失败 {total_fail}，跳过 {total_skip}"
             self.log(msg)
             color = ft.Colors.ERROR if total_fail else ft.Colors.PRIMARY
             self._set_format_label(msg, color)
@@ -269,6 +270,7 @@ class LocalizeTab(BaseTab):
             ensure_language_in_languages(texts, code, self.log)
             target = copy_lang_to_target(texts, code, self.log)
             if target is not None:
+                sync_missing_keys_from_en_us(texts, code, self.log)
                 self._translate_target_lang(target, texts, code, lang)
         self.log("语言文件翻译结束")
         self._sync_folder_names()
