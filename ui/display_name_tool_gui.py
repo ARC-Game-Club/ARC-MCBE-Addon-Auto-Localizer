@@ -12,6 +12,8 @@ from tkinter import filedialog, messagebox, scrolledtext
 from pathlib import Path
 import threading
 
+from utils.json_io import loads_jsonc
+
 
 def find_json_files(root: Path):
     """递归查找所有JSON文件"""
@@ -371,8 +373,8 @@ class DisplayNameToolGUI:
             for file_path in find_json_files(root_path):
                 processed += 1
                 try:
-                    text = file_path.read_text(encoding='utf-8')
-                    data = json.loads(text)
+                    text = file_path.read_text(encoding='utf-8-sig')
+                    data = loads_jsonc(text)
                 except Exception as e:
                     continue
 
@@ -462,8 +464,8 @@ class DisplayNameToolGUI:
                     continue
                 
                 try:
-                    text = file_path.read_text(encoding='utf-8')
-                    data = json.loads(text)
+                    text = file_path.read_text(encoding='utf-8-sig')
+                    data = loads_jsonc(text)
                 except Exception as e:
                     skipped += 1
                     self.log(f"跳过: 无法解析JSON - {rel_path}: {e}")

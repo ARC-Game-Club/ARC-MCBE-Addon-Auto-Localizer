@@ -10,6 +10,8 @@ import os
 import sys
 from pathlib import Path
 
+from utils.json_io import loads_jsonc
+
 SKIP = "skip"
 
 
@@ -67,7 +69,8 @@ def format_json_file(input_path, output_path=None, indent=4, quiet=True, log=Non
         return SKIP
 
     try:
-        data = json.loads(content)
+        # MCBE 包常含 // 或 /* */ 注释（JSONC）；严格 json.loads 会失败
+        data = loads_jsonc(content)
     except json.JSONDecodeError as e:
         name = Path(input_path).name
         if e.pos == 0:

@@ -12,6 +12,7 @@ from ui.display_name_tool_gui import (
     update_display_name_recursive,
 )
 
+from .json_io import loads_jsonc
 from .lang_files import ensure_texts_dir, upsert_lang_entries
 from .languages import DEFAULT_CODE, label_of
 from .llm_service import translate_text
@@ -155,7 +156,7 @@ def standardize_display_names_in_pack(
         if "texts" in parts or "_backup" in parts:
             continue
         try:
-            data = json.loads(fp.read_text(encoding="utf-8"))
+            data = loads_jsonc(fp.read_text(encoding="utf-8-sig"))
         except Exception:
             continue
         value = find_display_name_recursive(data)
@@ -228,7 +229,7 @@ def standardize_display_names_in_pack(
                         continue
                     continue
                 try:
-                    data = json.loads(fp.read_text(encoding="utf-8"))
+                    data = loads_jsonc(fp.read_text(encoding="utf-8-sig"))
                 except Exception as e:
                     log(f"  回退写回跳过 {rel}: {e}")
                     continue

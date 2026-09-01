@@ -5,7 +5,7 @@
 # ARC MCBE Addon Auto Localizer
 
 [![Codacy Grade](https://app.codacy.com/project/badge/Grade/077e44f1b31948caa7f55e909507df1e)](https://app.codacy.com/gh/ARC-Minecraft/ARC-MCBE-Addon-Auto-Localizer/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
-[![Version](https://img.shields.io/badge/version-v1.2.2-blue)](https://github.com/ARC-Minecraft/ARC-MCBE-Addon-Auto-Localizer)
+[![Version](https://img.shields.io/badge/version-v1.2.3-blue)](https://github.com/ARC-Minecraft/ARC-MCBE-Addon-Auto-Localizer)
 [![Python](https://img.shields.io/badge/python-3.12+-blue?logo=python&logoColor=white)](https://www.python.org/)
 [![Flet](https://img.shields.io/badge/Flet-0.86-black)](https://flet.dev/)
 [![License](https://img.shields.io/github/license/ARC-Minecraft/ARC-MCBE-Addon-Auto-Localizer)](LICENSE)
@@ -45,8 +45,8 @@ Short name: **ARC Auto Localizer**
 - **Email**: DEVILENMO@gmail.com
 - **组织**: [ARC Minecraft](https://github.com/ARC-Minecraft) / ARCStudio
 - **Org**: [ARC Minecraft](https://github.com/ARC-Minecraft) / ARCStudio
-- **版本**: 1.2.2
-- **Version**: 1.2.2
+- **版本**: 1.2.3
+- **Version**: 1.2.3
 - **推荐 Python 版本**: 3.12+
 - **Recommended Python**: 3.12+
 - **UI 框架**: Flet 0.86
@@ -286,7 +286,7 @@ pip install -r requirements.txt
 flet pack mcbe_localization_hub.py -n mcbe_localization_hub ^
   -i assets\app_icon.ico --add-data "assets;assets" ^
   --product-name "弧光自动本地化工具" --company-name "ARCStudio" ^
-  --product-version "1.2.2" --file-version "1.2.2" ^
+  --product-version "1.2.3" --file-version "1.2.3" ^
   --hidden-import openai --hidden-import httpx -y
 ```
 
@@ -316,13 +316,18 @@ Use the project `.venv` (not a bloated global conda env). Output is in `dist/` (
 
 ## Version
 
-当前版本：**1.2.2**
+当前版本：**1.2.3**
 
-Current version: **1.2.2**
+Current version: **1.2.3**
 
 ### 更新说明
 
 ### Changelog
+
+#### v1.2.3
+
+- **JSONC 全量解析**：规范化与 Display Name 标准化对包内 JSON 去掉 `//` / `/* */` 后再解析，带注释的动画/物品/模型等不再整片报「解析失败」
+- **JSONC for pack JSON**: format and Display Name steps strip `//` / `/* */` before parsing, so commented animation / item / model JSON no longer floods “parse failed”
 
 #### v1.2.2
 
