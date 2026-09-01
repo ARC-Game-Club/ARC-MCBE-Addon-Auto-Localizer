@@ -49,7 +49,32 @@ LANGUAGES: list[Language] = [
 
 DEFAULT_CODE = "zh_CN"
 
+TOOL_NAME_HAN = "弧光自动本地化工具"
+TOOL_NAME_LATIN = "ARC Auto Localizer"
+TOOL_JOINER = "-with "
+
 _BY_CODE: dict[str, Language] = {lang.code: lang for lang in LANGUAGES}
+
+
+def _inject_tool(tmpl: str, script: str) -> str:
+    """在后缀模板的右括号前插入工具名。"""
+    name = TOOL_NAME_HAN if script == "han" else TOOL_NAME_LATIN
+    return tmpl[:-1] + TOOL_JOINER + name + tmpl[-1]
+
+
+def _tmpl_to_strip_pattern(tmpl: str, relax_with: bool = False) -> str | None:
+    """将署名模板转为可剥后缀的正则片段。"""
+    if tmpl.startswith("（") and tmpl.endswith("）"):
+        mid = tmpl[1:-1].replace("{credit}", r"[^）]*")
+        if relax_with:
+            mid = mid.replace("-with ", r"-with\s*")
+        return f"（{mid}）"
+    if tmpl.startswith("(") and tmpl.endswith(")"):
+        mid = tmpl[1:-1].replace("{credit}", r"[^)]*")
+        if relax_with:
+            mid = mid.replace("-with ", r"-with\s*")
+        return f"\\({mid}\\)"
+    return None
 
 
 def get(code: str | None) -> Language:
@@ -64,28 +89,21 @@ def label_of(code: str | None) -> str:
 
 def credit_suffix(code: str | None, credit: str) -> str:
     credit = (credit or "").strip() or "DEVILENMO"
-    return get(code).credit_suffix.format(credit=credit)
+    lang = get(code)
+    tmpl = _inject_tool(lang.credit_suffix, lang.script)
+    return tmpl.format(credit=credit)
 
 
 def _build_credit_strip_re() -> re.Pattern[str]:
-    """用全部署名模板拼出能剥掉任意语言旧后缀的正则。"""
+    """用全部署名模板拼出能剥掉任意语言旧后缀的正则（含/不含工具名）。"""
     parts: list[str] = []
     seen: set[str] = set()
     for lang in LANGUAGES:
-        tmpl = lang.credit_suffix
-        # 全角括号形式：（…）
-        if tmpl.startswith("（") and tmpl.endswith("）"):
-            mid = tmpl[1:-1].replace("{credit}", r"[^）]*")
-            pat = f"（{mid}）"
-        # 半角括号形式：(...)
-        elif tmpl.startswith("(") and tmpl.endswith(")"):
-            mid = tmpl[1:-1].replace("{credit}", r"[^)]*")
-            pat = f"\\({mid}\\)"
-        else:
-            continue
-        if pat not in seen:
-            seen.add(pat)
-            parts.append(pat)
+        for tmpl in (_inject_tool(lang.credit_suffix, lang.script), lang.credit_suffix):
+            pat = _tmpl_to_strip_pattern(tmpl, relax_with=("-with " in tmpl))
+            if pat and pat not in seen:
+                seen.add(pat)
+                parts.append(pat)
     # 兼容旧版固定中文署名
     for extra in (r"（[^）]*汉化）", r"（[^）]*漢化）"):
         if extra not in seen:

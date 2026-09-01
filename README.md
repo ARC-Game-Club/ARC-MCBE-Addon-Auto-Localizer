@@ -5,7 +5,7 @@
 # ARC MCBE Addon Auto Localizer
 
 [![Codacy Grade](https://app.codacy.com/project/badge/Grade/077e44f1b31948caa7f55e909507df1e)](https://app.codacy.com/gh/ARC-Minecraft/ARC-MCBE-Addon-Auto-Localizer/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
-[![Version](https://img.shields.io/badge/version-v1.2.3-blue)](https://github.com/ARC-Minecraft/ARC-MCBE-Addon-Auto-Localizer)
+[![Version](https://img.shields.io/badge/version-v1.3.0-blue)](https://github.com/ARC-Minecraft/ARC-MCBE-Addon-Auto-Localizer)
 [![Python](https://img.shields.io/badge/python-3.12+-blue?logo=python&logoColor=white)](https://www.python.org/)
 [![Flet](https://img.shields.io/badge/Flet-0.86-black)](https://flet.dev/)
 [![License](https://img.shields.io/github/license/ARC-Minecraft/ARC-MCBE-Addon-Auto-Localizer)](LICENSE)
@@ -45,8 +45,8 @@ Short name: **ARC Auto Localizer**
 - **Email**: DEVILENMO@gmail.com
 - **组织**: [ARC Minecraft](https://github.com/ARC-Minecraft) / ARCStudio
 - **Org**: [ARC Minecraft](https://github.com/ARC-Minecraft) / ARCStudio
-- **版本**: 1.2.3
-- **Version**: 1.2.3
+- **版本**: 1.3.0
+- **Version**: 1.3.0
 - **推荐 Python 版本**: 3.12+
 - **Recommended Python**: 3.12+
 - **UI 框架**: Flet 0.86
@@ -286,7 +286,7 @@ pip install -r requirements.txt
 flet pack mcbe_localization_hub.py -n mcbe_localization_hub ^
   -i assets\app_icon.ico --add-data "assets;assets" ^
   --product-name "弧光自动本地化工具" --company-name "ARCStudio" ^
-  --product-version "1.2.3" --file-version "1.2.3" ^
+  --product-version "1.3.0" --file-version "1.3.0" ^
   --hidden-import openai --hidden-import httpx -y
 ```
 
@@ -316,13 +316,28 @@ Use the project `.venv` (not a bloated global conda env). Output is in `dist/` (
 
 ## Version
 
-当前版本：**1.2.3**
+当前版本：**1.3.0**
 
-Current version: **1.2.3**
+Current version: **1.3.0**
 
 ### 更新说明
 
 ### Changelog
+
+#### v1.3.0
+
+- **OCR 图片汉化（二号方案）**：图片本地化可选 RapidOCR + 文本 LLM：全量 OCR → 涂底 → 批量翻译 → 写回，适合 guidebook 等贴图文字
+- **OCR image localization (alt.)**: Image tab can use RapidOCR + text LLM—full OCR, inpaint, batch translate, write-back—for guidebook-style textures
+- **视觉大模型改图（一号方案）**：保留整图视觉 LLM 路径，设置中可切换方案
+- **Vision LLM path (primary)**: Full-image vision LLM remains available; switch methods in Settings
+- **本地化协议与工具水印**：署名步骤在 RP/BP 写入 `本地化协议_LOCALIZATION_LICENSE.txt`；汉化图片写入明水印 + LSB 隐写 + PNG 元数据（幂等）
+- **License file & watermark**: Credit step writes `本地化协议_LOCALIZATION_LICENSE.txt` per pack; localized images get visible watermark + LSB steganography + PNG metadata (idempotent)
+- **署名后缀带工具名**：`（译者-with 弧光自动本地化工具）`，兼容旧后缀去重
+- **Credit suffix includes tool name**: `（translator-with ARC Auto Localizer）`; strips legacy suffixes without duplicating
+- **LLM 等待心跳与进度状态**：长批次翻译每 15s 输出等待日志；进度条不确定动画 + 批次状态文案
+- **LLM wait heartbeat & status**: Long batches log every 15s while waiting; indeterminate progress bar + batch status text
+- **会话日志落盘**：每次启动覆盖写入 `%APPDATA%/…/latest_session.log`，界面日志同步保存
+- **Session log file**: Each launch overwrites `latest_session.log` under AppData; UI log is mirrored to disk
 
 #### v1.2.3
 

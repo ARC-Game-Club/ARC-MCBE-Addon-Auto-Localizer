@@ -7,6 +7,7 @@ import traceback
 
 import flet as ft
 
+from ..session_log import write as session_log_write
 from .components import LogPanel, error_toast
 
 
@@ -27,10 +28,38 @@ class BaseTab:
         raise NotImplementedError
 
     def log(self, message: str) -> None:
+        session_log_write(message)
         if self.log_panel is None:
             return
         try:
-            self.log_panel.append(message)
+            self.log_panel.append(message, persist=False)
+        except Exception:
+            pass
+
+    def set_working(self, message: str = "处理中…") -> None:
+        """长任务等待时显示不确定进度与状态文案。"""
+        if self.progress is not None:
+            self.progress.value = None
+        if self.progress_label is not None:
+            self.progress_label.value = message
+        try:
+            if self.progress is not None:
+                self.progress.update()
+            if self.progress_label is not None:
+                self.progress_label.update()
+        except Exception:
+            pass
+
+    def clear_working(self) -> None:
+        if self.progress is not None and self.progress.value is None:
+            self.progress.value = 0
+        if self.progress_label is not None:
+            self.progress_label.value = ""
+        try:
+            if self.progress is not None:
+                self.progress.update()
+            if self.progress_label is not None:
+                self.progress_label.update()
         except Exception:
             pass
 
@@ -51,6 +80,7 @@ class BaseTab:
     def run_in_thread(self, func, *args, **kwargs) -> None:
         self._stop_flag.clear()
         self._busy = True
+        self.set_working("运行中…")
         self.page.run_thread(self._thread_wrap, func, args, kwargs)
 
     def _thread_wrap(self, func, args, kwargs) -> None:
@@ -64,10 +94,11 @@ class BaseTab:
                 pass
         finally:
             self._busy = False
+            self.clear_working()
 
     def make_progress_row(self) -> ft.Control:
         self.progress = ft.ProgressBar(value=0, expand=True)
-        self.progress_label = ft.Text("", width=90, size=12)
+        self.progress_label = ft.Text("", expand=True, size=12)
         return ft.Row(
             controls=[self.progress, self.progress_label],
             spacing=8,

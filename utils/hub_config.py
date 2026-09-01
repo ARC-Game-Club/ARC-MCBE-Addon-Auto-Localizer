@@ -37,6 +37,7 @@ DEFAULT_CONFIG = {
         "model": "nano-banana-2-lite",
         "proxy": "127.0.0.1:7890",
     },
+    "image_localize_method": "llm",
     "cloud_drives": {},
 }
 
@@ -87,6 +88,9 @@ class HubConfig:
         code = str(self._data.get("target_language") or "").strip()
         if not code:
             self._data["target_language"] = DEFAULT_CODE
+        method = str(self._data.get("image_localize_method") or "").strip().lower()
+        if method not in ("llm", "ocr"):
+            self._data["image_localize_method"] = "llm"
         self._migrate_baidu_pan()
         from .cloud_drives import apply_defaults
         apply_defaults(self._data)

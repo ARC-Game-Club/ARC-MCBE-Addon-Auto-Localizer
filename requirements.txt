@@ -50,4 +50,6 @@ typing-inspection==0.4.2
 typing_extensions==4.16.0
 tzdata==2026.3
 urllib3==2.7.0
-watchdog==6.0.0
+rapidocr==3.9.2
+onnxruntime==1.29.0
+numpy==2.3.2

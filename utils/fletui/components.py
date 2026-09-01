@@ -7,6 +7,8 @@ from typing import Callable
 
 import flet as ft
 
+from ..session_log import session_log_path, write as session_log_write
+
 
 class LogPanel(ft.Container):
     """底部固定高度的滚动日志，最多保留 max_lines 条。"""
@@ -27,11 +29,22 @@ class LogPanel(ft.Container):
         use_expand = expand and height is None
         header = ft.Row(
             controls=[
-                ft.Text(
-                    "运行日志",
-                    size=12,
-                    weight=ft.FontWeight.W_600,
-                    color=ft.Colors.ON_SURFACE_VARIANT,
+                ft.Column(
+                    controls=[
+                        ft.Text(
+                            "运行日志",
+                            size=12,
+                            weight=ft.FontWeight.W_600,
+                            color=ft.Colors.ON_SURFACE_VARIANT,
+                        ),
+                        ft.Text(
+                            "已同步到 latest_session.log（每次启动覆盖）",
+                            size=10,
+                            color=ft.Colors.ON_SURFACE_VARIANT,
+                            tooltip=str(session_log_path()),
+                        ),
+                    ],
+                    spacing=0,
                     expand=True,
                 ),
                 ft.TextButton(
@@ -89,7 +102,9 @@ class LogPanel(ft.Container):
             if self._page is not None:
                 error_toast(self._page, f"复制失败: {ex}")
 
-    def append(self, message: str) -> None:
+    def append(self, message: str, *, persist: bool = True) -> None:
+        if persist:
+            session_log_write(message)
         ts = datetime.now().strftime("%H:%M:%S")
         self._list.controls.append(
             ft.Text(

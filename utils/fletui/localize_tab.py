@@ -317,17 +317,25 @@ class LocalizeTab(BaseTab):
                 self.log(f"  无需翻译（可能已是{lang}）")
             return
         all_translated = {}
+        batch_total = (total + self.BATCH_SIZE - 1) // self.BATCH_SIZE
         for i in range(0, total, self.BATCH_SIZE):
             if self._stop_flag.is_set():
                 self.log("翻译已停止")
                 break
             batch = entries[i:i + self.BATCH_SIZE]
+            batch_num = i // self.BATCH_SIZE + 1
+            batch_label = f"语言翻译批次 {batch_num}/{batch_total}（{len(batch)} 条）"
+            self.set_working(f"翻译批次 {batch_num}/{batch_total}，等待 LLM…")
             self.log(
-                f"  批次 {i // self.BATCH_SIZE + 1}: "
+                f"  批次 {batch_num}/{batch_total}: "
                 f"{i + 1}-{min(i + self.BATCH_SIZE, total)}"
             )
             result = translate_lang_batch(
-                batch, self.config.get("text_llm"), self.log, lang_label=lang
+                batch,
+                self.config.get("text_llm"),
+                self.log,
+                lang_label=lang,
+                batch_label=batch_label,
             )
             all_translated.update(result)
             self.set_progress(min(i + self.BATCH_SIZE, total), total)

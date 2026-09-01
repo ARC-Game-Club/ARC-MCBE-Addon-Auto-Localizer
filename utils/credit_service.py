@@ -8,6 +8,7 @@ from pathlib import Path
 from .json_io import loads_jsonc
 from .lang_files import read_lang_map, upsert_lang_entries
 from .languages import DEFAULT_CODE, credit_suffix, strip_credit_suffix
+from .license_service import write_localization_license
 
 
 def format_credit_suffix(credit: str, code: str | None = None) -> str:
@@ -120,6 +121,8 @@ def apply_translator_credit(
         if target_lang.is_file() and _update_lang_pack_name(target_lang, credit, code, log):
             ok = True
     if _update_manifest_name(pack_dir, credit, code, log):
+        ok = True
+    if write_localization_license(pack_dir, credit, log, code=code):
         ok = True
     if not ok:
         log(f"未能在 {pack_dir.name} 中找到可署名的包名")

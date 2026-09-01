@@ -9,11 +9,14 @@ import flet as ft
 
 from ..languages import DEFAULT_CODE, label_of
 from ..llm_service import translate_image_file
+from ..ocr_image_service import localize_images_ocr_batch
 from .base_tab import BaseTab
 from .components import confirm, error_toast, toast
 from .theme import BRAND_PINK
 
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
+IMAGE_METHOD_LLM = "llm"
+IMAGE_METHOD_OCR = "ocr"
 
 
 class ImageTab(BaseTab):
@@ -53,6 +56,30 @@ class ImageTab(BaseTab):
             disabled=True,
             on_click=lambda e: self._confirm_translate(),
         )
+        method = self.config.get("image_localize_method") or IMAGE_METHOD_LLM
+        if method not in (IMAGE_METHOD_LLM, IMAGE_METHOD_OCR):
+            method = IMAGE_METHOD_LLM
+        self.method_dropdown = ft.Dropdown(
+            label="本地化方案",
+            width=220,
+            value=method,
+            options=[
+                ft.DropdownOption(
+                    key=IMAGE_METHOD_LLM,
+                    text="视觉大模型（改画）",
+                ),
+                ft.DropdownOption(
+                    key=IMAGE_METHOD_OCR,
+                    text="OCR 擦写（省 token）",
+                ),
+            ],
+            on_select=self._on_method_change,
+        )
+        self.method_hint = ft.Text(
+            self._method_hint_text(method),
+            size=12,
+            color=ft.Colors.ON_SURFACE_VARIANT,
+        )
         self.root.content = self.build()
         self.refresh_folders()
 
@@ -72,6 +99,34 @@ class ImageTab(BaseTab):
         if bp:
             out.append(("行为包", bp))
         return out
+
+    def _method(self) -> str:
+        m = (self.config.get("image_localize_method") or IMAGE_METHOD_LLM).strip().lower()
+        return m if m in (IMAGE_METHOD_LLM, IMAGE_METHOD_OCR) else IMAGE_METHOD_LLM
+
+    @staticmethod
+    def _method_hint_text(method: str) -> str:
+        if method == IMAGE_METHOD_OCR:
+            return (
+                "OCR 方案：本地识别文字 → 擦除 → 文本 LLM 翻译 → 写回。"
+                "适合 guidebook 等底色干净的贴图；艺术字/复杂纹理建议用视觉大模型。"
+                "首次使用需联网下载 OCR 模型。"
+            )
+        return (
+            "视觉大模型方案：整图发送图片 LLM 改画，效果更自然，但消耗更多 token。"
+        )
+
+    def _on_method_change(self, e) -> None:
+        method = (e.control.value or IMAGE_METHOD_LLM).strip().lower()
+        if method not in (IMAGE_METHOD_LLM, IMAGE_METHOD_OCR):
+            method = IMAGE_METHOD_LLM
+        self.config.set(method, "image_localize_method")
+        self.config.save()
+        self.method_hint.value = self._method_hint_text(method)
+        try:
+            self.method_hint.update()
+        except Exception:
+            pass
 
     def build(self) -> ft.Control:
         folders_pane = ft.Container(
@@ -129,6 +184,11 @@ class ImageTab(BaseTab):
                     size=13,
                     color=ft.Colors.ON_SURFACE_VARIANT,
                 ),
+                ft.Row(
+                    controls=[self.method_dropdown],
+                    spacing=8,
+                ),
+                self.method_hint,
                 ft.Row(
                     controls=[folders_pane, gallery_pane],
                     spacing=12,
@@ -416,17 +476,32 @@ class ImageTab(BaseTab):
             pass
 
     def _confirm_translate(self) -> None:
-        if not self.config.get("image_llm", "api_key"):
+        method = self._method()
+        if method == IMAGE_METHOD_OCR:
+            if not self.config.get("text_llm", "api_key"):
+                error_toast(self.page, "OCR 方案需先在设置中填写文本翻译 API Key")
+                return
+        elif not self.config.get("image_llm", "api_key"):
             error_toast(self.page, "请先在设置中填写图片翻译 API Key")
             return
         images = [p for p in self._images if p in self._selected]
         if not images:
             error_toast(self.page, "请先勾选要本地化的图片")
             return
+        if method == IMAGE_METHOD_OCR:
+            msg = (
+                f"将用 OCR 擦写方案本地化选中的 {len(images)} 张图片（文本 LLM 翻译，省 token）。"
+                "原图备份到 _backup/。"
+            )
+        else:
+            msg = (
+                f"将用视觉大模型本地化选中的 {len(images)} 张图片，"
+                "并强制保持各自原分辨率。原图备份到 _backup/。"
+            )
         confirm(
             self.page,
             title="确认图片本地化",
-            message=f"将本地化选中的 {len(images)} 张图片，并强制保持各自原分辨率。原图备份到 _backup/。",
+            message=msg,
             on_yes=lambda: self.run_in_thread(self._images_worker, images),
         )
 
@@ -434,19 +509,33 @@ class ImageTab(BaseTab):
         total = len(images)
         code = (self.config.get("target_language") or DEFAULT_CODE).strip() or DEFAULT_CODE
         lang = label_of(code)
+        method = self._method()
+        method_label = "OCR 擦写" if method == IMAGE_METHOD_OCR else "视觉大模型"
         self.log("=" * 50)
-        self.log(f"图片本地化（→ {lang}）：选中 {total} 张（保持原分辨率）")
+        self.log(f"图片本地化（{method_label} → {lang}）：选中 {total} 张（保持原分辨率）")
         ok = 0
-        for n, path in enumerate(images, 1):
-            if self._stop_flag.is_set():
-                self.log("已停止")
-                break
-            self.log(f"[{n}/{total}] {path.name}")
-            if translate_image_file(
-                path, self.config.get("image_llm"), True, self.log, lang_label=lang
-            ):
-                ok += 1
-            self.set_progress(n, total)
+        if method == IMAGE_METHOD_OCR:
+            ok, _total = localize_images_ocr_batch(
+                images,
+                self.config.get("text_llm"),
+                True,
+                self.log,
+                lang_label=lang,
+                stop_flag=self._stop_flag,
+                on_progress=lambda n, t: self.set_progress(n, t),
+            )
+            self.set_progress(total, total)
+        else:
+            for n, path in enumerate(images, 1):
+                if self._stop_flag.is_set():
+                    self.log("已停止")
+                    break
+                self.log(f"[{n}/{total}] {path.name}")
+                if translate_image_file(
+                    path, self.config.get("image_llm"), True, self.log, lang_label=lang
+                ):
+                    ok += 1
+                self.set_progress(n, total)
         self.log(f"图片本地化结束：成功 {ok}/{total}")
         if self._current_folder is not None:
             try:

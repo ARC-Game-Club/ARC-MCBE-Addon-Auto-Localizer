@@ -11,6 +11,7 @@ from __future__ import annotations
 import flet as ft
 
 from ..hub_config import HubConfig
+from ..session_log import start_session, write as session_log_write
 from .achievement_tab import AchievementTab
 from .entity_tab import EntityTab
 from .export_tab import ExportTab
@@ -33,6 +34,8 @@ NAV_ITEMS = [
 
 class HubApp:
     def __init__(self, page: ft.Page):
+        log_path = start_session()
+        session_log_write(f"应用已启动 v{APP_VERSION}，会话日志: {log_path}")
         self.page = page
         self.config = HubConfig()
         self.file_picker = ft.FilePicker()

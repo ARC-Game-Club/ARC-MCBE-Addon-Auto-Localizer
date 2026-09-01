@@ -8,7 +8,7 @@ import flet as ft
 
 from ..cloud_drives import CloudDrive, CloudDriveError, drivers_from
 from ..languages import DEFAULT_CODE, LANGUAGES, credit_suffix
-from ..llm_service import make_client
+from ..llm_service import chat_completion_with_status, make_client
 from ..paths import get_minecraft_base_dir
 from .base_tab import BaseTab
 from .components import SectionCard, error_toast, toast
@@ -317,7 +317,10 @@ class SettingsView(BaseTab):
         self.log(f"测试{label} LLM 连接{via} ...")
         try:
             client = make_client(llm)
-            resp = client.chat.completions.create(
+            resp = chat_completion_with_status(
+                client,
+                self.log,
+                f"{label} LLM 连接测试",
                 model=llm.get("model"),
                 messages=[{"role": "user", "content": "ping"}],
                 max_tokens=5,

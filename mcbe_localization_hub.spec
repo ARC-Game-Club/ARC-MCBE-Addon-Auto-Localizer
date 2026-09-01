@@ -1,12 +1,15 @@
 # -*- mode: python ; coding: utf-8 -*-
+from PyInstaller.utils.hooks import collect_all
 
+rapidocr_datas, rapidocr_binaries, rapidocr_hiddenimports = collect_all('rapidocr')
+onnx_datas, onnx_binaries, onnx_hiddenimports = collect_all('onnxruntime')
 
 a = Analysis(
     ['mcbe_localization_hub.py'],
     pathex=[],
-    binaries=[],
-    datas=[('assets', 'assets')],
-    hiddenimports=['openai', 'httpx'],
+    binaries=rapidocr_binaries + onnx_binaries,
+    datas=[('assets', 'assets')] + rapidocr_datas + onnx_datas,
+    hiddenimports=['openai', 'httpx', 'numpy'] + rapidocr_hiddenimports + onnx_hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -35,6 +38,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    version='C:/Users/DEVILE~1/AppData/Local/Temp/9bb7bda7-f88d-4e99-95d2-f87d7cfc3072',
     icon=['assets/app_icon.ico'],
 )
