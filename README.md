@@ -5,7 +5,7 @@
 # ARC MCBE Addon Auto Localizer
 
 [![Codacy Grade](https://app.codacy.com/project/badge/Grade/077e44f1b31948caa7f55e909507df1e)](https://app.codacy.com/gh/ARC-Minecraft/ARC-MCBE-Addon-Auto-Localizer/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
-[![Version](https://img.shields.io/badge/version-v1.3.0-blue)](https://github.com/ARC-Minecraft/ARC-MCBE-Addon-Auto-Localizer)
+[![Version](https://img.shields.io/badge/version-v1.3.1-blue)](https://github.com/ARC-Minecraft/ARC-MCBE-Addon-Auto-Localizer)
 [![Python](https://img.shields.io/badge/python-3.12+-blue?logo=python&logoColor=white)](https://www.python.org/)
 [![Flet](https://img.shields.io/badge/Flet-0.86-black)](https://flet.dev/)
 [![License](https://img.shields.io/github/license/ARC-Minecraft/ARC-MCBE-Addon-Auto-Localizer)](LICENSE)
@@ -45,8 +45,8 @@ Short name: **ARC Auto Localizer**
 - **Email**: DEVILENMO@gmail.com
 - **组织**: [ARC Minecraft](https://github.com/ARC-Minecraft) / ARCStudio
 - **Org**: [ARC Minecraft](https://github.com/ARC-Minecraft) / ARCStudio
-- **版本**: 1.3.0
-- **Version**: 1.3.0
+- **版本**: 1.3.1
+- **Version**: 1.3.1
 - **推荐 Python 版本**: 3.12+
 - **Recommended Python**: 3.12+
 - **UI 框架**: Flet 0.86
@@ -144,15 +144,15 @@ Effects:
 
 ### ① Addon localization
 
-进入本页后会自动规范化 JSON / JS（内容无变化则跳过写盘）。**marketplace / 缓存里的非明文 JSON**（非 UTF-8、空文件、加密内容）会计入「跳过」而非失败；规范化时显示进度条与当前文件名。
+进入本页后会自动规范化 JSON / JS（内容无变化则跳过写盘）。**跳过** `manifest.json`、旁路 `*.backup`、以及原为 minify 的单行 JSON；JS 格式化后若出现非法真换行或 ASI 危险粘连则不写盘；写盘用原子替换，**不再留下旁路 `.backup`**（避免被 MC 当资源加载）。**marketplace / 缓存里的非明文 JSON**（非 UTF-8、空文件、加密内容）会计入「跳过」而非失败；规范化时显示进度条与当前文件名。
 
-Entering this page auto-formats JSON / JS (unchanged files are not rewritten). **Non-plain JSON from marketplace/cache packs** (non-UTF-8, empty, or encrypted) is counted as **skipped**, not failed; progress shows a bar and the current file name.
+Entering this page auto-formats JSON / JS (unchanged files are not rewritten). **Skips** `manifest.json`, sibling `*.backup`, and already-minified single-line JSON; JS writes are aborted if formatting introduces illegal raw newlines or ASI-unsafe statement joins; writes are atomic and **no longer leave sibling `.backup` files** (which Bedrock may load as assets). **Non-plain JSON from marketplace/cache packs** (non-UTF-8, empty, or encrypted) is counted as **skipped**, not failed; progress shows a bar and the current file name.
 
 | 步骤 / Step | 说明 / Description |
 |------|------|
 | Display Name 标准化<br>Display Name normalization | 扫描 JSON 中的 `minecraft:display_name`：能解析出 `minecraft:item` / `entity` / `block` + `identifier` 时，把 value 改成 `item.ns:id.name` / `entity.ns:id.name` / `tile.ns:id.name`，并把英文原文写入 `en_US.lang` 与目标语言 `.lang`；无法推导的条目回退为 LLM 直译写回 value<br>Scan `minecraft:display_name` in JSON. When `minecraft:item` / `entity` / `block` plus `identifier` can be resolved, rewrite the value to `item.ns:id.name` / `entity.ns:id.name` / `tile.ns:id.name`, and append the English source to `en_US.lang` and the target `.lang`. Entries that cannot be derived fall back to LLM in-place translation. |
 | 语言文件翻译<br>Language-file translation | 确保目标语言在 `languages.json`、从英文 lang 复制并调用 LLM 批量翻译条目（与 `en_US` 相同的条目视为未译）。翻译前会从 `en_US.lang` **补全**目标 `.lang` 中缺失的 key（如 `pack.name`）。若 `manifest.header.name` / `description` 是字面量，先改成 `pack.name` / `pack.description` 并写入语言文件再翻译<br>Ensure the target language is in `languages.json`, copy from the English lang file, and batch-translate with the LLM (entries still identical to `en_US` are treated as untranslated). Before translating, **missing keys** (e.g. `pack.name`) are copied from `en_US.lang` into the target `.lang`. Literal `manifest.header.name` / `description` are rewritten to `pack.name` / `pack.description` and moved into `.lang` before translation. |
-| 脚本提示本地化<br>Script-tip localization | 本地化 `sendMessage` / `form.title\|button\|label\|body\|toggle\|dropdown\|…`、`setActionBar`、`tooltip` 等玩家可见字符串，**含 dropdown 选项数组**；跳过语言键与含 `.map/.join` 的复杂多行模板；写入前 `node --check` 校验，失败自动回退<br>Localize player-visible strings such as `sendMessage`, form `title\|button\|label\|body\|toggle\|dropdown\|…`, `setActionBar`, and `tooltip`, **including dropdown option arrays**. Skip lang keys and complex multiline templates with `.map/.join`. Validate with `node --check` before write; roll back on failure. |
+| 脚本提示本地化<br>Script-tip localization | 本地化 `sendMessage` / 表单 `title\|button\|label\|body\|toggle\|dropdown\|…`、`setActionBar`、`tooltip`、**tellraw `"text"`**、以及 `CHANGELOG`/`TITLE` 等 UI 常量数组；跳过语言键与资源路径（不误杀 `Remove/Despawn`）；普通字符串译文中的真换行收成 `\n`；写入前做 ES 换行检查 + `node --check`，失败自动回退<br>Localize `sendMessage`, form `title\|button\|label\|body\|toggle\|dropdown\|…`, `setActionBar`, `tooltip`, **tellraw `"text"`**, and UI const arrays such as `CHANGELOG`/`TITLE`. Skip lang keys and resource paths (without false-positive on UI labels like `Remove/Despawn`). Raw newlines in `'…'`/`"…"` translations are escaped as `\n`. Validate with ES line-terminator checks + `node --check` before write; roll back on failure. |
 | 本地化者署名<br>Localizer credit | 在包名后追加按语言变化的署名后缀，默认 DEVILENMO，可在设置中改<br>Append a language-specific credit suffix to the pack name. Default is DEVILENMO; changeable in Settings. |
 | 一键本地化<br>One-click localize | 按顺序执行：标准化 → 语言 → 脚本 → 署名<br>Runs in order: normalize → language files → scripts → credit |
 
@@ -239,16 +239,20 @@ In Settings you can toggle “auto-upload after export” per drive and test the
 
 ### Settings
 
+页面顺序：基础项（目录 / 语言 / 署名）→ **一、LLM 配置**（文本 / 图片 + 连通性测试）→ **二、网盘设置** → 最底 **保存配置**。
+
+Layout: basics (scan dir / language / credit) → **1. LLM** (text / image + connection tests) → **2. Cloud drives** → **Save** at the bottom.
+
 - 本地化目标语言（下拉）
 - Target language (dropdown)
 - 默认本地化者名称
 - Default localizer name
-- 文本 LLM / 图片 LLM：Base URL、API Key、模型名、代理
-- Text LLM / image LLM: Base URL, API Key, model, proxy
-- 网盘插件配置与授权
-- Cloud-drive plugin config and auth
-- 连接测试与保存
-- Connection test and save
+- 文本 LLM / 图片 LLM：Base URL、API Key、模型名、代理；测试按钮紧跟其后
+- Text / image LLM: Base URL, API Key, model, proxy; test buttons sit right under the fields
+- 网盘插件配置与授权（各驱动自带「测试网盘」）
+- Cloud-drive plugin config and auth (each drive has its own test)
+- 最下方单独「保存配置」
+- Dedicated **Save** control at the bottom
 
 ### 其它
 
@@ -286,7 +290,7 @@ pip install -r requirements.txt
 flet pack mcbe_localization_hub.py -n mcbe_localization_hub ^
   -i assets\app_icon.ico --add-data "assets;assets" ^
   --product-name "弧光自动本地化工具" --company-name "ARCStudio" ^
-  --product-version "1.3.0" --file-version "1.3.0" ^
+  --product-version "1.3.1" --file-version "1.3.1" ^
   --hidden-import openai --hidden-import httpx -y
 ```
 
@@ -316,13 +320,26 @@ Use the project `.venv` (not a bloated global conda env). Output is in `dist/` (
 
 ## Version
 
-当前版本：**1.3.0**
+当前版本：**1.3.1**
 
-Current version: **1.3.0**
+Current version: **1.3.1**
 
 ### 更新说明
 
 ### Changelog
+
+#### v1.3.1
+
+- **脚本安全写回**：普通 `'…'`/`"…"` 译文禁止真换行（收成 `\n`）；写盘前补 ES LineTerminator 检查（`node --check` 对 `\r` 会漏检）；格式化若破坏 ASI 则跳过写盘
+- **Safe script writes**: raw newlines in `'…'`/`"…"` translations are escaped as `\n`; pre-write ES LineTerminator checks cover what `node --check` can miss for `\r`; JS formatting that risks ASI is not written
+- **脚本覆盖补全**：提取 tellraw `"text"`、`CHANGELOG`/`TITLE` 等 UI 常量数组；收紧路径启发，不再误杀 `Remove/Despawn`；跳过 `@minecraft/`、`./` 模块路径
+- **Broader script tips**: extract tellraw `"text"` and UI const arrays (`CHANGELOG`/`TITLE`, …); path heuristics no longer skip UI labels like `Remove/Despawn`; skip `@minecraft/` and `./` module paths
+- **规范化减害**：跳过 `manifest.json` 与 minify JSON；不再留下旁路 `*.backup`（改原子写 / `_backup/`）；扫描忽略备份文件
+- **Safer formatting**: skip `manifest.json` and minified JSON; no sibling `*.backup` (atomic write / `_backup/`); scanners ignore backup files
+- **.lang 防跨行**：译文 value 内真换行收成 `\n`，避免引擎把下一行中文当 key
+- **.lang line safety**: raw newlines in values become `\n` so the engine does not treat the next line as a key
+- **设置页布局**：LLM 配置 + 连通性测试 → 网盘 → 最底保存
+- **Settings layout**: LLM + connectivity tests → cloud drives → Save at the bottom
 
 #### v1.3.0
 

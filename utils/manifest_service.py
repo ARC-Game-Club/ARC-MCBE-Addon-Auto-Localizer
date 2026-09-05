@@ -23,7 +23,9 @@ def read_manifest(pack_path: Path):
 
 def _write_manifest(manifest: Path, data: dict, log, ok_msg: str) -> bool:
     try:
-        shutil.copy2(str(manifest), str(manifest) + ".backup")
+        backup_dir = manifest.parent / "_backup"
+        backup_dir.mkdir(exist_ok=True)
+        shutil.copy2(str(manifest), str(backup_dir / manifest.name))
         manifest.write_text(
             json.dumps(data, ensure_ascii=False, indent=4), encoding="utf-8"
         )

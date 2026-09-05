@@ -8,6 +8,8 @@ from ui.format_json import SKIP, format_json_file
 
 # 扫描时跳过的目录名（备份、依赖等，不是 Addon 正文）
 _SKIP_DIR_NAMES = frozenset({"_backup", ".git", "node_modules", "__pycache__"})
+# 旁路备份后缀：MC 会把 *.json.backup 当方块定义加载
+_SKIP_NAME_SUFFIXES = (".backup", ".bak")
 
 
 def _rel(root: Path, fp: Path) -> str:
@@ -18,7 +20,10 @@ def _rel(root: Path, fp: Path) -> str:
 
 
 def _should_skip_path(fp: Path) -> bool:
-    return any(part in _SKIP_DIR_NAMES for part in fp.parts)
+    if any(part in _SKIP_DIR_NAMES for part in fp.parts):
+        return True
+    name = fp.name
+    return any(name.endswith(suf) for suf in _SKIP_NAME_SUFFIXES)
 
 
 def _collect(root: Path, pattern: str, log=None, label: str = ""):

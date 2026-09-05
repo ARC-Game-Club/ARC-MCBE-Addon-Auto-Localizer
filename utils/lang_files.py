@@ -198,11 +198,14 @@ def upsert_lang_entries(lang_path: Path, mapping: dict[str, str], log) -> int:
     if content and not content.endswith("\n"):
         lines.append("")
     for key, value in to_add.items():
-        lines.append(f"{key}={value}")
+        lines.append(f"{key}={_sanitize_lang_value(value)}")
     new_content = content + ("\n".join(lines) + "\n" if lines else "")
     # 若原文件为空且 lines 以空行开头，去掉开头空行
     if not content:
-        new_content = "\n".join(f"{k}={v}" for k, v in to_add.items()) + "\n"
+        new_content = (
+            "\n".join(f"{k}={_sanitize_lang_value(v)}" for k, v in to_add.items())
+            + "\n"
+        )
     try:
         lang_path.write_text(new_content, encoding="utf-8")
     except OSError as e:
@@ -235,17 +238,34 @@ def sync_missing_keys_from_en_us(texts_dir: Path, code: str, log) -> int:
 
 
 def rebuild_lang_lines(orig_text: str, parsed, translated: dict) -> str:
-    """基于原始文本重建，entry 行用翻译值替换 value，保留末尾换行。"""
+    """基于原始文本重建，entry 行用翻译值替换 value，保留末尾换行。
+
+    value 内禁止真换行：否则引擎会把下一行中文当成 key（Invalid lang file format）。
+    """
     out = []
     for line, (kind, key, value) in zip(orig_text.splitlines(), parsed):
         if kind == "entry" and key in translated and translated[key] != value:
-            out.append(f"{key}={translated[key]}")
+            val = _sanitize_lang_value(translated[key])
+            out.append(f"{key}={val}")
         else:
             out.append(line)
     result = "\n".join(out)
     if orig_text.endswith("\n") and not result.endswith("\n"):
         result += "\n"
     return result
+
+
+def _sanitize_lang_value(value: str) -> str:
+    """保证 .lang 的 value 不跨行；真换行收成 \\n 转义。"""
+    if not value:
+        return value
+    if "\n" not in value and "\r" not in value:
+        return value
+    return (
+        value.replace("\r\n", "\\n")
+        .replace("\n", "\\n")
+        .replace("\r", "\\n")
+    )
 
 
 def lang_file_needs_translation(lang_path: Path, target_code: str | None = None) -> bool:

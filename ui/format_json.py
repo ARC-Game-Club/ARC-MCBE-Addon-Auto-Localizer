@@ -3,16 +3,49 @@
 """
 JSON 格式化脚本
 用于重新格式化 JSON 文件，统一缩进与排版
+
+约束：
+- 跳过 manifest.json（UUID 等包标识，格式化步骤不应改它）
+- 原文件若是单行 minify，保持 minify，不膨胀体积
+- 不在包内留下旁路 *.backup（MC 会误加载）
 """
 
 import json
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 from utils.json_io import loads_jsonc
 
 SKIP = "skip"
+
+# 步骤 0 规范化时跳过；manifest 的语义改动走 manifest_service
+_SKIP_BASENAMES = frozenset({"manifest.json"})
+
+
+def _atomic_write(path: str, content: str) -> None:
+    path = str(path)
+    directory = str(Path(path).parent)
+    fd, tmp = tempfile.mkstemp(prefix=".fmt_", suffix=".json", dir=directory)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
+            f.write(content)
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def _is_minified_json(content: str) -> bool:
+    """原文件基本是单行 minify（允许末尾换行）。"""
+    body = content.lstrip("\ufeff").strip()
+    if not body:
+        return False
+    return "\n" not in body and "\r" not in body
 
 
 def format_json_file(input_path, output_path=None, indent=4, quiet=True, log=None):
@@ -40,13 +73,20 @@ def format_json_file(input_path, output_path=None, indent=4, quiet=True, log=Non
         if log:
             log(msg)
 
+    name = Path(input_path).name
+    if name.endswith(".backup") or name.endswith(".bak"):
+        _skip(f"  跳过: {name}（备份文件）")
+        return SKIP
+    if name.lower() in _SKIP_BASENAMES:
+        _skip(f"  跳过: {name}（包标识，不在规范化步骤改写）")
+        return SKIP
+
     _p(f"正在读取文件: {input_path}")
 
     try:
         with open(input_path, "r", encoding="utf-8-sig") as f:
             content = f.read()
     except UnicodeDecodeError:
-        name = Path(input_path).name
         _skip(
             f"  跳过: {name}（非 UTF-8 文本，可能是 marketplace 缓存/二进制文件）"
         )
@@ -60,19 +100,21 @@ def format_json_file(input_path, output_path=None, indent=4, quiet=True, log=Non
 
     stripped = content.lstrip("\ufeff").lstrip()
     if not stripped:
-        name = Path(input_path).name
         _skip(f"  跳过: {name}（空文件）")
         return SKIP
     if stripped[0] not in "{[":
-        name = Path(input_path).name
         _skip(f"  跳过: {name}（非明文 JSON，可能是 marketplace 加密/缓存）")
+        return SKIP
+
+    # 原包 minify → 保持 minify，避免 textures_list 等体积暴涨
+    if _is_minified_json(content):
+        _skip(f"  跳过: {name}（原为 minify，保持单行）")
         return SKIP
 
     try:
         # MCBE 包常含 // 或 /* */ 注释（JSONC）；严格 json.loads 会失败
         data = loads_jsonc(content)
     except json.JSONDecodeError as e:
-        name = Path(input_path).name
         if e.pos == 0:
             _skip(f"  跳过: {name}（非明文 JSON，可能是 marketplace 加密/缓存）")
             return SKIP
@@ -92,27 +134,17 @@ def format_json_file(input_path, output_path=None, indent=4, quiet=True, log=Non
         _err(f"序列化失败: {input_path} ({e})")
         return False
 
-    # 内容无变化：不写盘、不建 backup
+    # 内容无变化：不写盘
     if formatted == content:
         _p("内容已是规范格式，跳过")
         return True
 
     if output_path is None:
-        backup_path = input_path + ".backup"
-        _p(f"创建备份: {backup_path}")
-        try:
-            with open(backup_path, "w", encoding="utf-8") as f:
-                f.write(content)
-        except Exception as e:
-            _err(f"创建备份失败: {input_path} ({e})")
-            return False
-
         output_path = input_path
 
     _p(f"正在写入文件: {output_path}")
     try:
-        with open(output_path, "w", encoding="utf-8", newline="\n") as f:
-            f.write(formatted)
+        _atomic_write(output_path, formatted)
     except Exception as e:
         _err(f"写入失败: {output_path} ({e})")
         return False

@@ -189,7 +189,7 @@ class SettingsView(BaseTab):
         body = ft.Column(
             controls=[
                 ft.Text(
-                    "配置目标语言、本地化者与 AI 接口，改完点击「保存配置」生效。",
+                    "先配 LLM 并测试连通性，再配网盘；改完点最下方「保存配置」生效。",
                     size=13,
                     color=ft.Colors.ON_SURFACE_VARIANT,
                 ),
@@ -215,29 +215,59 @@ class SettingsView(BaseTab):
                 ),
                 SectionCard("本地化目标语言", self.lang_dropdown),
                 SectionCard("本地化者署名", self.credit_field),
+                # —— 第一部分：LLM ——
+                ft.Text(
+                    "一、LLM 配置",
+                    size=16,
+                    weight=ft.FontWeight.W_600,
+                ),
                 SectionCard(
-                    "文本翻译 LLM（用于 .lang / display_name / 脚本本地化）",
+                    "文本翻译（.lang / display_name / 脚本）",
                     self.text_base,
                     self.text_key,
                     self.text_model,
                     self.text_proxy,
                 ),
                 SectionCard(
-                    "图片翻译 LLM（用于图片本地化，需支持图像输入 + 图像输出）",
+                    "图片翻译（需支持图像输入 + 图像输出）",
                     self.img_base,
                     self.img_key,
                     self.img_model,
                     self.img_proxy,
                 ),
-                *drive_cards,
                 ft.Row(
                     controls=[
-                        ft.OutlinedButton("测试文本连接", icon=ft.Icons.WIFI_TETHERING, on_click=lambda e: self._test("text")),
-                        ft.OutlinedButton("测试图片连接", icon=ft.Icons.WIFI_TETHERING, on_click=lambda e: self._test("image")),
-                        ft.FilledButton("保存配置", icon=ft.Icons.SAVE, on_click=lambda e: self._save()),
+                        ft.OutlinedButton(
+                            "测试文本连接",
+                            icon=ft.Icons.WIFI_TETHERING,
+                            on_click=lambda e: self._test("text"),
+                        ),
+                        ft.OutlinedButton(
+                            "测试图片连接",
+                            icon=ft.Icons.WIFI_TETHERING,
+                            on_click=lambda e: self._test("image"),
+                        ),
                     ],
                     spacing=10,
                     wrap=True,
+                ),
+                # —— 第二部分：网盘 ——
+                ft.Text(
+                    "二、网盘设置",
+                    size=16,
+                    weight=ft.FontWeight.W_600,
+                ),
+                *drive_cards,
+                # —— 最底：保存 ——
+                ft.Container(height=8),
+                ft.Row(
+                    controls=[
+                        ft.FilledButton(
+                            "保存配置",
+                            icon=ft.Icons.SAVE,
+                            on_click=lambda e: self._save(),
+                        ),
+                    ],
                 ),
             ],
             spacing=12,
