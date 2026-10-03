@@ -5,7 +5,7 @@
 # ARC MCBE Addon Auto Localizer
 
 [![Codacy Grade](https://app.codacy.com/project/badge/Grade/077e44f1b31948caa7f55e909507df1e)](https://app.codacy.com/gh/ARC-Minecraft/ARC-MCBE-Addon-Auto-Localizer/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
-[![Version](https://img.shields.io/badge/version-v1.3.1-blue)](https://github.com/ARC-Minecraft/ARC-MCBE-Addon-Auto-Localizer)
+[![Version](https://img.shields.io/badge/version-v1.3.2-blue)](https://github.com/ARC-Minecraft/ARC-MCBE-Addon-Auto-Localizer)
 [![Python](https://img.shields.io/badge/python-3.12+-blue?logo=python&logoColor=white)](https://www.python.org/)
 [![Flet](https://img.shields.io/badge/Flet-0.86-black)](https://flet.dev/)
 [![License](https://img.shields.io/github/license/ARC-Minecraft/ARC-MCBE-Addon-Auto-Localizer)](LICENSE)
@@ -45,8 +45,8 @@ Short name: **ARC Auto Localizer**
 - **Email**: DEVILENMO@gmail.com
 - **组织**: [ARC Minecraft](https://github.com/ARC-Minecraft) / ARCStudio
 - **Org**: [ARC Minecraft](https://github.com/ARC-Minecraft) / ARCStudio
-- **版本**: 1.3.1
-- **Version**: 1.3.1
+- **版本**: 1.3.2
+- **Version**: 1.3.2
 - **推荐 Python 版本**: 3.12+
 - **Recommended Python**: 3.12+
 - **UI 框架**: Flet 0.86
@@ -290,7 +290,7 @@ pip install -r requirements.txt
 flet pack mcbe_localization_hub.py -n mcbe_localization_hub ^
   -i assets\app_icon.ico --add-data "assets;assets" ^
   --product-name "弧光自动本地化工具" --company-name "ARCStudio" ^
-  --product-version "1.3.1" --file-version "1.3.1" ^
+  --product-version "1.3.2" --file-version "1.3.2" ^
   --hidden-import openai --hidden-import httpx -y
 ```
 
@@ -320,13 +320,20 @@ Use the project `.venv` (not a bloated global conda env). Output is in `dist/` (
 
 ## Version
 
-当前版本：**1.3.1**
+当前版本：**1.3.2**
 
-Current version: **1.3.1**
+Current version: **1.3.2**
 
 ### 更新说明
 
 ### Changelog
+
+#### v1.3.2
+
+- **资源包语言键**：行为包 Display Name 转出的语言键会同步写入资源包。物品、方块、实体名由客户端从资源包解析，只写在行为包里游戏内不会显示
+- **Resource pack lang keys**: language keys produced from behavior-pack display names are also written into the resource pack. Item, block, and entity names are resolved on the client from the resource pack; keys that exist only in the behavior pack do not show in-game
+- **语言键推导**：实体刷怪蛋使用 `item.spawn_egg.entity.<ns>:<id>.name`；单独识别 `client_entity`；namespace 只取本定义的 identifier，不再被 components 里的跨包引用带偏
+- **Lang key derivation**: spawn eggs use `item.spawn_egg.entity.<ns>:<id>.name`; `client_entity` is recognized on its own; the namespace comes only from that definition's identifier
 
 #### v1.3.1
 
