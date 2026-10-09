@@ -15,6 +15,8 @@ from ..export_service import (
     build_export_filename,
     export_localized_pack,
     sanitize_export_name,
+    version_in_mod_name,
+    version_to_append,
 )
 from ..languages import DEFAULT_CODE, credit_suffix
 from .base_tab import BaseTab
@@ -73,6 +75,7 @@ class ExportTab(BaseTab):
                     "· 同时有资源包与行为包 → .mcaddon\n"
                     "· 仅有一侧 → .mcpack\n"
                     "二者本质都是 ZIP，仅后缀不同。\n"
+                    "文件名带版本号：模组名里已有 x.x.x 时用名称中的，否则用行为包版本。\n"
                     "勾选下方网盘开关可在导出后自动上传 / 分享。",
                     size=13,
                     color=ft.Colors.ON_SURFACE_VARIANT,
@@ -112,9 +115,17 @@ class ExportTab(BaseTab):
         code = self._target_code()
         mod = sanitize_export_name(base_mod_name(self._mod_name()))
         both = rp is not None and bp is not None
-        filename = build_export_filename(mod, credit, both, code)
+        version, ver_src = version_to_append(mod, bp, rp)
+        filename = build_export_filename(mod, credit, both, code, version=version)
+        if ver_src == "name":
+            ver_line = f"版本: {version_in_mod_name(mod)}（模组名）"
+        elif version:
+            ver_line = f"版本: {version}（{'行为包' if ver_src == 'bp' else '资源包'}）"
+        else:
+            ver_line = "版本: （未找到）"
         lines = [
             f"模组: {mod}",
+            ver_line,
             f"署名: {credit_suffix(code, credit)}",
             f"资源包: {rp.name if rp else '（无）'}",
             f"行为包: {bp.name if bp else '（无）'}",

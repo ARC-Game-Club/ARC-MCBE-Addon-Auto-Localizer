@@ -19,6 +19,8 @@ PAD_PX = 4
 FALLBACK_ERASE = (255, 255, 255)
 COLOR_BIN = 16
 TEXT_COLOR_DIST = 45
+MIN_CONTRAST_RATIO = 3.0
+TARGET_CONTRAST_RATIO = 4.5
 
 
 def _color_dist(c1: tuple[int, ...], c2: tuple[int, ...]) -> float:
@@ -27,6 +29,53 @@ def _color_dist(c1: tuple[int, ...], c2: tuple[int, ...]) -> float:
 
 def _is_similar(c1: tuple[int, ...], c2: tuple[int, ...], threshold: float = TEXT_COLOR_DIST) -> bool:
     return _color_dist(c1, c2) < threshold
+
+
+def _rel_luminance(c: tuple[int, ...]) -> float:
+    """WCAG 相对亮度。"""
+
+    def lin(v: int) -> float:
+        v = int(v) / 255
+        return v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4
+
+    return 0.2126 * lin(c[0]) + 0.7152 * lin(c[1]) + 0.0722 * lin(c[2])
+
+
+def _contrast_ratio(c1: tuple[int, ...], c2: tuple[int, ...]) -> float:
+    l1, l2 = sorted((_rel_luminance(c1), _rel_luminance(c2)), reverse=True)
+    return (l1 + 0.05) / (l2 + 0.05)
+
+
+def _scale_toward(
+    c: tuple[int, int, int], target: tuple[int, int, int], t: float
+) -> tuple[int, int, int]:
+    return tuple(int(round(a + (b - a) * t)) for a, b in zip(c, target))
+
+
+def _pick_text_color(
+    text_color: tuple[int, int, int],
+    bg_color: tuple[int, int, int],
+    min_ratio: float = MIN_CONTRAST_RATIO,
+    target_ratio: float = TARGET_CONTRAST_RATIO,
+) -> tuple[int, int, int]:
+    """译文颜色：原字色与填充底色对比不足 3:1 时，沿原色相压暗/提亮到 4.5:1。
+
+    首选方向（与原设计的深浅一致）到端点仍不足 3:1，才换反方向；黑/白都不达标则取对比最大的候选。
+    """
+    if _contrast_ratio(text_color, bg_color) >= min_ratio:
+        return text_color
+    darker = [_scale_toward(text_color, (0, 0, 0), k / 8) for k in range(1, 9)]
+    lighter = [_scale_toward(text_color, (255, 255, 255), k / 8) for k in range(1, 9)]
+    ramp = darker if _rel_luminance(text_color) <= _rel_luminance(bg_color) else lighter
+    other = lighter if ramp is darker else darker
+    for candidates in (ramp, other):
+        for c in candidates:
+            if _contrast_ratio(c, bg_color) >= target_ratio:
+                return c
+        # 端点即纯黑/纯白，是该方向对比最大的一档
+        if _contrast_ratio(candidates[-1], bg_color) >= min_ratio:
+            return candidates[-1]
+    return max(darker + lighter, key=lambda c: _contrast_ratio(c, bg_color))
 
 
 def _quantize_color(rgb) -> tuple[int, int, int]:
@@ -213,22 +262,34 @@ def _sample_background_color(
     return FALLBACK_ERASE
 
 
-def _sample_text_color(arr: np.ndarray, box: np.ndarray) -> tuple[int, int, int]:
-    """框内偏暗像素的众数作为文字色。"""
+def _sample_text_color(
+    arr: np.ndarray,
+    box: np.ndarray,
+    bg_ref: tuple[int, int, int] | None = None,
+) -> tuple[int, int, int]:
+    """框内与底色差异最大的像素众数作为文字色；无底色参考时退回偏暗像素众数。"""
     h, w = arr.shape[:2]
     mask = _polygon_mask(h, w, box)
     pixels = arr[mask]
     if len(pixels) == 0:
         return (0, 0, 0)
-    if pixels.shape[1] >= 3:
-        rgb = pixels[:, :3].astype(np.float32)
-        lum = 0.299 * rgb[:, 0] + 0.587 * rgb[:, 1] + 0.114 * rgb[:, 2]
-        dark = pixels[lum <= np.percentile(lum, 55)]
-        if len(dark) >= 4:
-            return _dominant_color(dark)
-        return _dominant_color(pixels)
-    v = int(np.median(pixels))
-    return (v, v, v)
+    if pixels.shape[1] < 3:
+        v = int(np.median(pixels))
+        return (v, v, v)
+
+    rgb = pixels[:, :3].astype(np.float32)
+    if bg_ref is not None:
+        dist = np.sqrt(((rgb - np.array(bg_ref[:3], np.float32)) ** 2).sum(axis=1))
+        far = pixels[dist >= TEXT_COLOR_DIST]
+        # 文字在框内占少数且与底色差距明显才可信，避免把底色/花纹当字色
+        if len(far) >= max(4, int(len(pixels) * 0.03)):
+            return _dominant_color(far)
+
+    lum = 0.299 * rgb[:, 0] + 0.587 * rgb[:, 1] + 0.114 * rgb[:, 2]
+    dark = pixels[lum <= np.percentile(lum, 55)]
+    if len(dark) >= 4:
+        return _dominant_color(dark)
+    return _dominant_color(pixels)
 
 
 def _erase_rect(draw, box: np.ndarray, pad: int, w: int, h: int, fill: tuple[int, int, int]) -> None:
@@ -371,7 +432,9 @@ def _build_plan(image_path: Path, log) -> ImagePlan | None:
         return None
     arr = np.array(rgba)
     for region in regions:
-        region.text_color = _sample_text_color(arr, region.box)
+        ring = _collect_ring_pixels(arr, region.box, PAD_PX)
+        bg_ref = _dominant_color(ring) if len(ring) >= 8 else None
+        region.text_color = _sample_text_color(arr, region.box, bg_ref)
         region.bg_color = _sample_background_color(
             arr, region.box, PAD_PX, region.text_color
         )
@@ -428,9 +491,15 @@ def _write_translations(plan: ImagePlan, log) -> bool:
 
     draw = ImageDraw.Draw(rgba)
     font_path = _find_font_path()
+    adjusted = 0
     for region in plan.regions:
         text = region.translation or region.text
-        _draw_translated_text(draw, region.box, text, region.text_color, font_path)
+        color = _pick_text_color(region.text_color, region.bg_color)
+        if color != region.text_color:
+            adjusted += 1
+        _draw_translated_text(draw, region.box, text, color, font_path)
+    if adjusted:
+        log(f"  {adjusted} 处译文与底色对比不足，已自动选用对比色")
 
     rgba = stamp_image(rgba)
     pnginfo = png_text_chunk() if (orig_format or "PNG").upper() in ("PNG",) else None

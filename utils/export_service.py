@@ -8,10 +8,13 @@ from pathlib import Path
 
 from .credit_service import with_credit
 from .languages import DEFAULT_CODE, strip_credit_suffix
+from .manifest_service import read_manifest
 
 _INVALID_WIN = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 _MC_FORMAT = re.compile(r"§.")
 _SKIP_NAMES = {".ds_store", "thumbs.db", "desktop.ini"}
+# 模组名里的 x.x.x；允许前缀 v，不把更长的数字串截成三段
+_VERSION_IN_NAME = re.compile(r"(?<![\d.])v?(\d+\.\d+\.\d+)(?![\d.])", re.IGNORECASE)
 
 
 def sanitize_export_name(name: str, max_len: int = 80) -> str:
@@ -29,6 +32,70 @@ def sanitize_export_name(name: str, max_len: int = 80) -> str:
 def base_mod_name(name: str) -> str:
     """去掉已有本地化署名后缀，得到模组基名。"""
     return strip_credit_suffix(name or "") or name or "unnamed_mod"
+
+
+def version_in_mod_name(name: str) -> str | None:
+    """模组名中的 x.x.x。有则导出文件名以它为准，不再另附版本。"""
+    match = _VERSION_IN_NAME.search(base_mod_name(name))
+    return match.group(1) if match else None
+
+
+def _version_part(value) -> str | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int) and value >= 0:
+        return str(value)
+    if isinstance(value, str) and value.strip().isdigit():
+        return str(int(value.strip()))
+    return None
+
+
+def format_manifest_version(version) -> str | None:
+    """把 manifest header.version 收成 x.x.x。"""
+    if isinstance(version, (list, tuple)) and version:
+        parts = [_version_part(p) for p in list(version)[:3]]
+        if any(p is None for p in parts):
+            return None
+        while len(parts) < 3:
+            parts.append("0")
+        return ".".join(parts)
+    if isinstance(version, str):
+        match = _VERSION_IN_NAME.search(version.strip())
+        return match.group(1) if match else None
+    return None
+
+
+def pack_manifest_version(pack: Path | None) -> str | None:
+    if pack is None or not Path(pack).is_dir():
+        return None
+    data, err = read_manifest(pack)
+    if err or not isinstance(data, dict):
+        return None
+    header = data.get("header")
+    if not isinstance(header, dict):
+        return None
+    return format_manifest_version(header.get("version"))
+
+
+def version_to_append(
+    mod_name: str, bp: Path | None, rp: Path | None = None
+) -> tuple[str | None, str]:
+    """
+    导出文件名要追加的版本，以及来源。
+    模组名已含 x.x.x 时不追加（来源 name）。
+    否则用行为包版本；没有行为包版本时用资源包版本。
+    返回 (version_or_none, source)，source 为 name / bp / rp / ""。
+    """
+    named = version_in_mod_name(mod_name)
+    if named:
+        return None, "name"
+    bp_ver = pack_manifest_version(bp)
+    if bp_ver:
+        return bp_ver, "bp"
+    rp_ver = pack_manifest_version(rp)
+    if rp_ver:
+        return rp_ver, "rp"
+    return None, ""
 
 
 def _should_skip(path: Path) -> bool:
@@ -60,11 +127,16 @@ def _add_pack_to_zip(zf: zipfile.ZipFile, pack_dir: Path, arc_prefix: str | None
 
 
 def build_export_filename(
-    mod_name: str, credit: str, both: bool, code: str | None = None
+    mod_name: str,
+    credit: str,
+    both: bool,
+    code: str | None = None,
+    version: str | None = None,
 ) -> str:
-    titled = sanitize_export_name(
-        with_credit(base_mod_name(mod_name), credit, code or DEFAULT_CODE)
-    )
+    name = base_mod_name(mod_name)
+    if version and not version_in_mod_name(name):
+        name = f"{name} {version}".strip()
+    titled = sanitize_export_name(with_credit(name, credit, code or DEFAULT_CODE))
     return f"{titled}.mcaddon" if both else f"{titled}.mcpack"
 
 
@@ -92,7 +164,16 @@ def export_localized_pack(
 
     base = sanitize_export_name(base_mod_name(mod_name))
     both = has_rp and has_bp
-    filename = build_export_filename(base, credit, both, code)
+    version, ver_src = version_to_append(
+        base, Path(bp) if has_bp else None, Path(rp) if has_rp else None
+    )
+    if ver_src == "name":
+        log(f"版本号: {version_in_mod_name(base)}（模组名）")
+    elif version:
+        log(f"版本号: {version}（{'行为包' if ver_src == 'bp' else '资源包'}）")
+    else:
+        log("未找到版本号，文件名不含版本")
+    filename = build_export_filename(base, credit, both, code, version=version)
     dest = out_dir / filename
     if dest.exists():
         dest.unlink()

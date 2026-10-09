@@ -469,7 +469,7 @@ class ImageTab(BaseTab):
     def _sync_translate_btn(self) -> None:
         n = len(self._selected)
         self.translate_btn.disabled = n == 0
-        self.translate_btn.text = f"本地化选中图片（{n}）"
+        self.translate_btn.content = f"本地化选中图片（{n}）"
         try:
             self.translate_btn.update()
         except Exception:

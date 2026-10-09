@@ -27,3 +27,5 @@ display_names_translation.txt
 display_names_translation.txt.orig
 identifier_display_name.txt
 monster_health.txt
+# 调试时拷进仓库的包 texts 文件夹
+texts/

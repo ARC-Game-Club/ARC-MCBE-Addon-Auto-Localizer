@@ -19,6 +19,7 @@ class BaseTab:
         self.config = config
         self._stop_flag = threading.Event()
         self._busy = False
+        self._busy_lock = threading.Lock()
         self.log_panel: LogPanel | None = None
         self.progress: ft.ProgressBar | None = None
         self.progress_label: ft.Text | None = None
@@ -77,11 +78,28 @@ class BaseTab:
         except Exception:
             pass
 
-    def run_in_thread(self, func, *args, **kwargs) -> None:
-        self._stop_flag.clear()
-        self._busy = True
+    def on_busy_changed(self, busy: bool) -> None:
+        """子类可覆盖：任务开始/结束时更新按钮禁用态等 UI。"""
+
+    def run_in_thread(self, func, *args, **kwargs) -> bool:
+        """启动后台任务。若已有任务在跑则拒绝并提示，避免叠跑改路径导致写失败。"""
+        with self._busy_lock:
+            if self._busy:
+                self.log("已有任务在运行，请等待完成后再试（避免重复点击叠跑）")
+                try:
+                    error_toast(self.page, "已有任务在运行，请等待完成后再试")
+                except Exception:
+                    pass
+                return False
+            self._busy = True
+            self._stop_flag.clear()
         self.set_working("运行中…")
+        try:
+            self.on_busy_changed(True)
+        except Exception:
+            pass
         self.page.run_thread(self._thread_wrap, func, args, kwargs)
+        return True
 
     def _thread_wrap(self, func, args, kwargs) -> None:
         try:
@@ -93,7 +111,12 @@ class BaseTab:
             except Exception:
                 pass
         finally:
-            self._busy = False
+            with self._busy_lock:
+                self._busy = False
+            try:
+                self.on_busy_changed(False)
+            except Exception:
+                pass
             self.clear_working()
 
     def make_progress_row(self) -> ft.Control:

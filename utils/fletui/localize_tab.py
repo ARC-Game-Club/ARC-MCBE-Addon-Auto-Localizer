@@ -43,7 +43,10 @@ class LocalizeTab(BaseTab):
         self._on_pack_paths_changed = on_pack_paths_changed
         self._format_ready = threading.Event()
         self.format_label = ft.Text("格式化: 进行中…", size=13)
-        self.credit_btn: ft.FilledButton | None = None
+        self.credit_btn: ft.FilledTonalButton | None = None
+        self._action_btns: list[ft.Control] = []
+        self._btn_idle_text: dict[ft.Control, str] = {}
+        self._active_btn: ft.Control | None = None
         self.root.content = self.build()
         self.page.run_thread(self._auto_format_worker)
 
@@ -76,40 +79,101 @@ class LocalizeTab(BaseTab):
             out.append(("行为包", bp))
         return out
 
+    @staticmethod
+    def _btn_label(btn: ft.Control) -> str:
+        # Flet 0.86+ 按钮文案在 content，不再有 .text
+        c = getattr(btn, "content", None)
+        return c if isinstance(c, str) else ""
+
+    @staticmethod
+    def _set_btn_label(btn: ft.Control, text: str) -> None:
+        btn.content = text
+
+    def _register_action_btn(self, btn: ft.Control) -> ft.Control:
+        self._action_btns.append(btn)
+        self._btn_idle_text[btn] = self._btn_label(btn)
+        return btn
+
+    def _sync_idle_text(self, btn: ft.Control | None) -> None:
+        if btn is not None:
+            self._btn_idle_text[btn] = self._btn_label(btn)
+
+    def on_busy_changed(self, busy: bool) -> None:
+        for btn in self._action_btns:
+            btn.disabled = busy
+            if busy and btn is self._active_btn:
+                self._set_btn_label(btn, "汉化中…")
+            elif not busy:
+                self._set_btn_label(
+                    btn, self._btn_idle_text.get(btn, self._btn_label(btn))
+                )
+            try:
+                btn.update()
+            except Exception:
+                pass
+        if not busy:
+            self._active_btn = None
+
+    def _start_action(self, btn: ft.Control | None, worker, *args) -> None:
+        self._sync_idle_text(btn)
+        self._active_btn = btn
+        if not self.run_in_thread(worker, *args):
+            self._active_btn = None
+
     def build(self) -> ft.Control:
         credit = (self.config.get("translator_credit") or "DEVILENMO").strip()
         code = self._target_code()
         lang = self._lang_label()
         suffix = format_credit_suffix(credit, code)
-        self.credit_btn = ft.FilledTonalButton(
-            f"④ 本地化者署名（{suffix}）",
-            icon=ft.Icons.BADGE,
-            on_click=lambda e: self.run_credit(),
+        self._action_btns.clear()
+        self._btn_idle_text.clear()
+        self.credit_btn = self._register_action_btn(
+            ft.FilledTonalButton(
+                f"④ 本地化者署名（{suffix}）",
+                icon=ft.Icons.BADGE,
+                on_click=lambda e: self.run_credit(),
+            )
         )
-
-        steps = SectionCard(
-            f"本地化步骤（→ {lang}）",
+        btn_display = self._register_action_btn(
             ft.FilledButton(
                 "① Display Name 标准化",
                 icon=ft.Icons.LABEL,
                 on_click=lambda e: self.run_display_name(),
-            ),
+            )
+        )
+        btn_lang = self._register_action_btn(
             ft.FilledButton(
                 f"② 语言文件翻译（→ {lang}）",
                 icon=ft.Icons.TRANSLATE,
                 on_click=lambda e: self.run_lang(),
-            ),
+            )
+        )
+        btn_scripts = self._register_action_btn(
             ft.FilledButton(
                 "③ 脚本提示本地化",
                 icon=ft.Icons.CODE,
                 on_click=lambda e: self.run_scripts(),
-            ),
-            self.credit_btn,
+            )
+        )
+        self.all_btn = self._register_action_btn(
             ft.FilledButton(
                 "⚡ 一键本地化（标准化 + 语言 + 脚本 + 署名）",
                 icon=ft.Icons.BOLT,
                 on_click=lambda e: self.run_all(),
-            ),
+            )
+        )
+        # 供 run_* 引用；build 内局部变量避免闭包过期
+        self._btn_display = btn_display
+        self._btn_lang = btn_lang
+        self._btn_scripts = btn_scripts
+
+        steps = SectionCard(
+            f"本地化步骤（→ {lang}）",
+            btn_display,
+            btn_lang,
+            btn_scripts,
+            self.credit_btn,
+            self.all_btn,
         )
 
         body = ft.Column(
@@ -230,7 +294,7 @@ class LocalizeTab(BaseTab):
         if not self._packs():
             error_toast(self.page, "当前模组没有可用包")
             return
-        self.run_in_thread(self._display_name_worker)
+        self._start_action(self._btn_display, self._display_name_worker)
 
     def _display_name_worker(self) -> None:
         self._await_format()
@@ -252,7 +316,7 @@ class LocalizeTab(BaseTab):
         if not self.config.get("text_llm", "api_key"):
             error_toast(self.page, "请先在设置中填写文本翻译 API Key")
             return
-        self.run_in_thread(self._lang_worker)
+        self._start_action(self._btn_lang, self._lang_worker)
 
     def _lang_worker(self) -> None:
         self._await_format()
@@ -351,7 +415,7 @@ class LocalizeTab(BaseTab):
         if not self.config.get("text_llm", "api_key"):
             error_toast(self.page, "请先在设置中填写文本翻译 API Key")
             return
-        self.run_in_thread(self._scripts_worker, bp)
+        self._start_action(self._btn_scripts, self._scripts_worker, bp)
 
     def _scripts_worker(self, root: Path) -> None:
         self._await_format()
@@ -385,9 +449,16 @@ class LocalizeTab(BaseTab):
         credit = self._credit_name()
         code = self._target_code()
         if self.credit_btn is not None:
-            self.credit_btn.text = f"④ 本地化者署名（{format_credit_suffix(credit, code)}）"
-            self.credit_btn.update()
-        self.run_in_thread(self._credit_worker, credit)
+            self._set_btn_label(
+                self.credit_btn,
+                f"④ 本地化者署名（{format_credit_suffix(credit, code)}）",
+            )
+            self._sync_idle_text(self.credit_btn)
+            try:
+                self.credit_btn.update()
+            except Exception:
+                pass
+        self._start_action(self.credit_btn, self._credit_worker, credit)
 
     def _credit_worker(self, credit: str) -> None:
         self._await_format()
@@ -405,7 +476,7 @@ class LocalizeTab(BaseTab):
         if not self.config.get("text_llm", "api_key"):
             error_toast(self.page, "请先在设置中填写文本翻译 API Key")
             return
-        self.run_in_thread(self._all_worker)
+        self._start_action(self.all_btn, self._all_worker)
 
     def _all_worker(self) -> None:
         self._await_format()
