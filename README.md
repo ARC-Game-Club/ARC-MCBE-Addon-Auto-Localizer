@@ -5,7 +5,7 @@
 # ARC MCBE Addon Auto Localizer
 
 [![Codacy Grade](https://app.codacy.com/project/badge/Grade/077e44f1b31948caa7f55e909507df1e)](https://app.codacy.com/gh/ARC-Minecraft/ARC-MCBE-Addon-Auto-Localizer/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
-[![Version](https://img.shields.io/badge/version-v1.3.2-blue)](https://github.com/ARC-Minecraft/ARC-MCBE-Addon-Auto-Localizer)
+[![Version](https://img.shields.io/badge/version-v1.3.4-blue)](https://github.com/ARC-Minecraft/ARC-MCBE-Addon-Auto-Localizer)
 [![Python](https://img.shields.io/badge/python-3.12+-blue?logo=python&logoColor=white)](https://www.python.org/)
 [![Flet](https://img.shields.io/badge/Flet-0.86-black)](https://flet.dev/)
 [![License](https://img.shields.io/github/license/ARC-Minecraft/ARC-MCBE-Addon-Auto-Localizer)](LICENSE)
@@ -45,8 +45,8 @@ Short name: **ARC Auto Localizer**
 - **Email**: DEVILENMO@gmail.com
 - **组织**: [ARC Minecraft](https://github.com/ARC-Minecraft) / ARCStudio
 - **Org**: [ARC Minecraft](https://github.com/ARC-Minecraft) / ARCStudio
-- **版本**: 1.3.2
-- **Version**: 1.3.2
+- **版本**: 1.3.4
+- **Version**: 1.3.4
 - **推荐 Python 版本**: 3.12+
 - **Recommended Python**: 3.12+
 - **UI 框架**: Flet 0.86
@@ -287,12 +287,19 @@ pip install -r requirements.txt
 ## Packaging
 
 ```bash
-flet pack mcbe_localization_hub.py -n mcbe_localization_hub ^
-  -i assets\app_icon.ico --add-data "assets;assets" ^
-  --product-name "弧光自动本地化工具" --company-name "ARCStudio" ^
-  --product-version "1.3.2" --file-version "1.3.2" ^
-  --hidden-import openai --hidden-import httpx -y
+.venv\Scripts\python.exe scripts\build_release.py
 ```
+
+脚本按 `mcbe_localization_hub.spec` 执行 PyInstaller，并依次过三道闸，任一失败即中止，避免再产出 v1.3.3 那种缺依赖的坏包（当时在无 flet 的环境里打包，PyInstaller 只写警告不报错）：
+
+The script runs PyInstaller with `mcbe_localization_hub.spec` and enforces three gates; any failure aborts the build, preventing broken packages like the v1.3.3 one (packaged in an env without flet, where PyInstaller only warned):
+
+1. 构建解释器必须能导入 flet / OCR / LLM 等关键依赖
+1. The build interpreter must import all critical deps (flet, OCR, LLM, …)
+2. PyInstaller 的 warn 文件中不得出现关键模块缺失
+2. The PyInstaller warn file must not list any critical module as missing
+3. 冒烟启动 exe，确认主窗口正常拉起；产物改名为 `ARC-MCBE-Addon-Auto-Localizer-v<版本>-windows-x64.exe` 并打印 sha256
+3. Smoke-launch the exe and confirm the main window opens; the artifact is renamed to `ARC-MCBE-Addon-Auto-Localizer-v<version>-windows-x64.exe` with its sha256 printed
 
 请使用项目 `.venv`（勿用臃肿的全局 conda 环境），产物在 `dist/`（已 gitignore）。正式版通过 GitHub Release 发布可双击运行的 `exe`。
 
