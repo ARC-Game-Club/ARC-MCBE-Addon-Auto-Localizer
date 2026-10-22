@@ -159,7 +159,13 @@ def gate_smoke() -> None:
     fake_home = ROOT / "build" / "smoke_home"
     shutil.rmtree(fake_home, ignore_errors=True)
     fake_home.mkdir(parents=True)
-    env = {**os.environ, "USERPROFILE": str(fake_home)}
+    # HOME 也要隔离：ntpath.expanduser 里 HOME 优先于 USERPROFILE，
+    # Git Bash 会给子进程传真实 HOME，导致冒烟误走本机缓存
+    env = {
+        **os.environ,
+        "USERPROFILE": str(fake_home),
+        "HOME": str(fake_home),
+    }
     print(f"[build_release] 闸 4：干净机器冒烟（最多等 {SMOKE_TIMEOUT_S} 秒）...")
     proc = subprocess.Popen([str(exe)], cwd=str(exe.parent), env=env)
     deadline = time.time() + SMOKE_TIMEOUT_S
