@@ -5,7 +5,7 @@
 # ARC MCBE Addon Auto Localizer
 
 [![Codacy Grade](https://app.codacy.com/project/badge/Grade/077e44f1b31948caa7f55e909507df1e)](https://app.codacy.com/gh/ARC-Minecraft/ARC-MCBE-Addon-Auto-Localizer/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
-[![Version](https://img.shields.io/badge/version-v1.3.4-blue)](https://github.com/ARC-Minecraft/ARC-MCBE-Addon-Auto-Localizer)
+[![Version](https://img.shields.io/badge/version-v1.3.5-blue)](https://github.com/ARC-Minecraft/ARC-MCBE-Addon-Auto-Localizer)
 [![Python](https://img.shields.io/badge/python-3.12+-blue?logo=python&logoColor=white)](https://www.python.org/)
 [![Flet](https://img.shields.io/badge/Flet-0.86-black)](https://flet.dev/)
 [![License](https://img.shields.io/github/license/ARC-Minecraft/ARC-MCBE-Addon-Auto-Localizer)](LICENSE)
@@ -45,8 +45,8 @@ Short name: **ARC Auto Localizer**
 - **Email**: DEVILENMO@gmail.com
 - **组织**: [ARC Minecraft](https://github.com/ARC-Minecraft) / ARCStudio
 - **Org**: [ARC Minecraft](https://github.com/ARC-Minecraft) / ARCStudio
-- **版本**: 1.3.4
-- **Version**: 1.3.4
+- **版本**: 1.3.5
+- **Version**: 1.3.5
 - **推荐 Python 版本**: 3.12+
 - **Recommended Python**: 3.12+
 - **UI 框架**: Flet 0.86
