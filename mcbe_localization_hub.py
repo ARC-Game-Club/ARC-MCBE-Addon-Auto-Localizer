@@ -23,11 +23,19 @@ from utils.fletui.app import main
 if __name__ == "__main__":
     selftest_out = os.environ.get("MCBE_SELFTEST")
     if selftest_out:  # 发布冒烟自检：验证冻结环境 https 能力后写结果文件退出
-        import http.client
-        import ssl
+        try:
+            import http.client
+            import ssl
 
-        ok = hasattr(ssl, "SSLContext") and hasattr(http.client, "HTTPSConnection")
+            reason = (
+                ""
+                if hasattr(ssl, "SSLContext")
+                and hasattr(http.client, "HTTPSConnection")
+                else "https handler 缺失"
+            )
+        except Exception as exc:  # 自检要把任何导入失败原样写成结果
+            reason = repr(exc)
         with open(selftest_out, "w", encoding="utf-8") as f:
-            f.write("OK" if ok else "FAIL")
-        sys.exit(0 if ok else 1)
+            f.write("OK" if not reason else f"FAIL: {reason}")
+        sys.exit(0 if not reason else 1)
     ft.run(main, assets_dir="assets")

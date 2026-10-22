@@ -69,12 +69,24 @@ def gate_imports() -> None:
     )
 
 
+def _build_env() -> dict[str, str]:
+    """剥掉 PATH 里的 Git 自带 OpenSSL（mingw64），防止依赖扫描错误解析到它。"""
+    env = dict(os.environ)
+    parts = [
+        p for p in env.get("PATH", "").split(os.pathsep)
+        if "git" not in p.lower()
+    ]
+    env["PATH"] = os.pathsep.join(parts)
+    return env
+
+
 def run_pyinstaller() -> None:
     shutil.rmtree(BUILD_DIR, ignore_errors=True)  # 清掉旧 warn，避免读到上次构建的结果
     print("[build_release] 运行 PyInstaller（可能需要数分钟）...")
     proc = subprocess.run(
         [sys.executable, "-m", "PyInstaller", "--noconfirm", str(SPEC)],
         cwd=str(ROOT),
+        env=_build_env(),
     )
     if proc.returncode != 0:
         fail(f"闸 2 前置未通过：PyInstaller 退出码 {proc.returncode}")
