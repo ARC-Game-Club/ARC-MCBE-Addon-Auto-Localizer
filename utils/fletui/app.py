@@ -129,7 +129,10 @@ class HubApp:
         self._screen = "welcome"
         self._set_back(False)
         self._welcome = WelcomeView(
-            self.page, self.config, on_enter=self._show_toolbox
+            self.page,
+            self.config,
+            on_enter=self._show_toolbox,
+            on_mods_changed=self._update_status,
         )
         self._body.content = self._welcome.root
         self._body.padding = 16

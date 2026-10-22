@@ -7,19 +7,25 @@ from pathlib import Path
 import flet as ft
 
 from ..mod_catalog import ModEntry, list_mods
+from ..pack_manage_service import (
+    delete_pack_dirs,
+    open_folder,
+    prune_config_selection,
+)
 from ..pack_rename_service import apply_pack_renames, plan_pack_renames
 from ..paths import resolve_mods_base_dir
-from .components import confirm, error_toast, toast
+from .components import choose, confirm, error_toast, toast
 from .theme import ICON_ASSET, brand_gradient
 
 
 class WelcomeView:
     """首屏：扫描并选择模组。"""
 
-    def __init__(self, page: ft.Page, config, on_enter):
+    def __init__(self, page: ft.Page, config, on_enter, on_mods_changed=None):
         self.page = page
         self.config = config
         self.on_enter = on_enter
+        self.on_mods_changed = on_mods_changed
         self._mods: list[ModEntry] = []
         self.count_label = ft.Text("", size=13)
         self.list_view = ft.ListView(expand=True, spacing=8, padding=4)
@@ -174,18 +180,109 @@ class WelcomeView:
                             spacing=4,
                             expand=True,
                         ),
+                        ft.IconButton(
+                            icon=ft.Icons.FOLDER_OPEN,
+                            tooltip="打开模组所在文件夹",
+                            on_click=lambda e, m=mod: self._open_mod_folder(m),
+                        ),
+                        ft.IconButton(
+                            icon=ft.Icons.DELETE_OUTLINE,
+                            tooltip="删除此模组",
+                            icon_color=ft.Colors.ERROR,
+                            on_click=lambda e, m=mod: self._delete_mod(m),
+                        ),
                         ft.Icon(ft.Icons.CHEVRON_RIGHT),
                     ],
-                    spacing=12,
+                    spacing=4,
                     vertical_alignment=ft.CrossAxisAlignment.CENTER,
                 ),
-                padding=14,
+                padding=ft.Padding.only(left=14, top=6, bottom=6, right=6),
                 ink=True,
                 on_click=lambda e, m=mod: self._enter_mod(m),
             ),
             elevation=0,
             variant=ft.CardVariant.OUTLINED,
         )
+
+    def _open_mod_folder(self, mod: ModEntry) -> None:
+        packs = mod.pack_paths()
+        if not packs:
+            error_toast(self.page, "该模组没有可打开的包目录")
+            return
+        if mod.has_rp and mod.has_bp:
+            # 双包：让用户选择要打开哪一个
+            choose(
+                self.page,
+                title=f"打开模组文件夹：{mod.name}",
+                message="该模组同时包含资源包与行为包，请选择要打开的目录：",
+                options=[
+                    ("资源包（RP）", lambda: self._open_pack_folder(mod.resource_pack)),
+                    ("行为包（BP）", lambda: self._open_pack_folder(mod.behavior_pack)),
+                ],
+            )
+            return
+        self._open_pack_folder(packs[0])
+
+    def _open_pack_folder(self, pack: Path | None) -> None:
+        if pack is None:
+            error_toast(self.page, "该包目录不存在")
+            return
+        try:
+            open_folder(pack)
+        except Exception as exc:
+            error_toast(self.page, f"打开文件夹失败: {exc}")
+
+    def _delete_mod(self, mod: ModEntry) -> None:
+        paths = mod.pack_paths()
+        if not paths:
+            error_toast(self.page, "该模组没有可删除的包目录")
+            return
+        preview = "\n".join(f"• {p}" for p in paths)
+        confirm(
+            self.page,
+            title=f"删除模组：{mod.name}",
+            message="",
+            yes_text="永久删除",
+            content=ft.Column(
+                controls=[
+                    ft.Text(
+                        "将从磁盘永久删除以下文件夹（不可恢复，删除前请确认游戏已关闭）：",
+                        color=ft.Colors.ERROR,
+                    ),
+                    ft.Container(
+                        content=ft.Text(preview, font_family="Consolas", size=12, selectable=True),
+                        border=ft.Border.all(1, ft.Colors.OUTLINE_VARIANT),
+                        border_radius=8,
+                        padding=10,
+                    ),
+                ],
+                tight=True,
+                spacing=10,
+                width=560,
+            ),
+            on_yes=lambda: self._apply_delete(mod, paths),
+        )
+
+    def _apply_delete(self, mod: ModEntry, paths: list[Path]) -> None:
+        ok, errors = delete_pack_dirs(paths)
+        if ok:
+            prune_config_selection(self.config, paths)
+            if self.on_mods_changed is not None:
+                try:
+                    self.on_mods_changed()
+                except Exception:
+                    pass
+        if errors:
+            error_toast(
+                self.page,
+                f"已删除 {ok} 个文件夹，失败 {len(errors)} 个（可能被游戏占用）:\n"
+                + "\n".join(errors[:8]),
+            )
+        elif ok:
+            toast(self.page, f"已删除模组「{mod.name}」的 {ok} 个文件夹")
+        else:
+            error_toast(self.page, "没有可删除的文件夹（可能已被删除或移动）")
+        self.reload_mods()
 
     def _enter_mod(self, mod: ModEntry) -> None:
         rp = str(mod.resource_pack) if mod.resource_pack else ""

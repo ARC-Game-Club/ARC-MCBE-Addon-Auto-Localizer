@@ -139,6 +139,10 @@ Effects:
 - Cards show RP / BP badges and pack names
 - 支持按目标语言 `pack.name` 等规则预览并整理模组文件夹名称
 - Preview and rename addon folders using the target-language `pack.name` and related rules
+- 卡片上可一键打开模组所在文件夹：双包模组会弹出选择框，分别直接进入资源包 / 行为包目录
+- One click on a card opens the addon folder: for paired addons a dialog offers to enter the resource-pack or behavior-pack directory directly
+- 卡片上可直接删除模组（确认框列出将被删除的 RP / BP 文件夹；若删除的是当前选中模组会自动清空选择）
+- Delete an addon right from its card (a confirmation dialog lists the RP / BP folders to be removed; deleting the currently selected addon clears the selection)
 
 ### ① 模组本地化
 
@@ -155,6 +159,10 @@ Entering this page auto-formats JSON / JS (unchanged files are not rewritten). *
 | 脚本提示本地化<br>Script-tip localization | 本地化 `sendMessage` / 表单 `title\|button\|label\|body\|toggle\|dropdown\|…`、`setActionBar`、`tooltip`、**tellraw `"text"`**、以及 `CHANGELOG`/`TITLE` 等 UI 常量数组；跳过语言键与资源路径（不误杀 `Remove/Despawn`）；普通字符串译文中的真换行收成 `\n`；写入前做 ES 换行检查 + `node --check`，失败自动回退<br>Localize `sendMessage`, form `title\|button\|label\|body\|toggle\|dropdown\|…`, `setActionBar`, `tooltip`, **tellraw `"text"`**, and UI const arrays such as `CHANGELOG`/`TITLE`. Skip lang keys and resource paths (without false-positive on UI labels like `Remove/Despawn`). Raw newlines in `'…'`/`"…"` translations are escaped as `\n`. Validate with ES line-terminator checks + `node --check` before write; roll back on failure. |
 | 本地化者署名<br>Localizer credit | 在包名后追加按语言变化的署名后缀，默认 DEVILENMO，可在设置中改<br>Append a language-specific credit suffix to the pack name. Default is DEVILENMO; changeable in Settings. |
 | 一键本地化<br>One-click localize | 按顺序执行：标准化 → 语言 → 脚本 → 署名<br>Runs in order: normalize → language files → scripts → credit |
+
+汉化完成后（语言翻译 / 署名结束时），若包仍在官方 `resource_packs` / `behavior_packs` 目录下，会自动移入同级的 `development_resource_packs` / `development_behavior_packs`，便于游戏中即改即测；配置中的包路径会同步更新。本页还提供「打开模组所在文件夹」按钮，直接进入当前模组的包目录（双包模组会先弹出 RP / BP 选择框）。
+
+After localization (language translation / credit), packs still sitting in the official `resource_packs` / `behavior_packs` folders are automatically moved into the sibling `development_resource_packs` / `development_behavior_packs` for quick in-game testing; the configured pack paths are updated accordingly. This page also offers an "open addon folder" button that enters the current addon's pack directory directly (paired addons get an RP / BP chooser dialog first).
 
 ### ② 图片本地化
 

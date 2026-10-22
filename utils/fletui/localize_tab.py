@@ -27,12 +27,16 @@ from ..lang_files import (
 from ..languages import DEFAULT_CODE, label_of
 from ..llm_service import translate_lang_batch
 from ..manifest_service import normalize_manifest_header_keys
+from ..pack_manage_service import (
+    move_mod_packs_to_development,
+    open_folder,
+)
 from ..pack_rename_service import sync_mod_pack_folder_names
 from ..paths import resolve_pack_dir
 from ..script_localize_service import localize_scripts_in
 from ..text_utils import needs_translation
 from .base_tab import BaseTab
-from .components import SectionCard, error_toast
+from .components import SectionCard, choose, error_toast
 
 
 class LocalizeTab(BaseTab):
@@ -176,16 +180,30 @@ class LocalizeTab(BaseTab):
             self.all_btn,
         )
 
+        tools_row = ft.Row(
+            controls=[
+                ft.OutlinedButton(
+                    "打开模组所在文件夹",
+                    icon=ft.Icons.FOLDER_OPEN,
+                    tooltip="在资源管理器中定位当前模组的包目录",
+                    on_click=lambda e: self.open_mod_folder(),
+                ),
+            ],
+            spacing=10,
+        )
+
         body = ft.Column(
             controls=[
                 ft.Text(
                     "进入本页后会自动规范化 JSON / JS。下方按步骤执行，或使用一键本地化。"
                     "图片本地化请到侧栏「图片本地化」页。"
-                    f"当前目标语言：{lang}（{code}）。",
+                    f"当前目标语言：{lang}（{code}）。"
+                    "汉化完成后会自动把官方目录下的包移入 development_* 开发目录，便于即改即测。",
                     size=13,
                     color=ft.Colors.ON_SURFACE_VARIANT,
                 ),
                 self.format_label,
+                tools_row,
                 steps,
                 self.make_progress_row(),
             ],
@@ -340,6 +358,7 @@ class LocalizeTab(BaseTab):
         self._sync_folder_names()
 
     def _sync_folder_names(self) -> None:
+        self._move_to_development()
         self.log("按本地化包名同步文件夹 …")
         n = sync_mod_pack_folder_names(self._rp(), self._bp(), self.config, self.log)
         if n and self._on_pack_paths_changed is not None:
@@ -347,6 +366,43 @@ class LocalizeTab(BaseTab):
                 self._on_pack_paths_changed()
             except Exception as e:
                 self.log(f"刷新界面路径失败: {e}")
+
+    def _move_to_development(self) -> None:
+        """汉化完成后，把仍在官方 resource_packs / behavior_packs 下的包移入 development_*，便于测试。"""
+        moved, _, _ = move_mod_packs_to_development(
+            self._rp(), self._bp(), self.config, self.log
+        )
+        if moved and self._on_pack_paths_changed is not None:
+            try:
+                self._on_pack_paths_changed()
+            except Exception as e:
+                self.log(f"刷新界面路径失败: {e}")
+
+    def open_mod_folder(self) -> None:
+        """直接进入当前模组的包目录；双包时先弹出选择框。"""
+        rp, bp = self._rp(), self._bp()
+        if rp is None and bp is None:
+            error_toast(self.page, "当前模组没有可用包")
+            return
+        if rp is not None and bp is not None:
+            choose(
+                self.page,
+                title="打开模组文件夹",
+                message=f"「{self.config.get('current_mod_name') or '当前模组'}」"
+                "同时包含资源包与行为包，请选择要打开的目录：",
+                options=[
+                    ("资源包（RP）", lambda: self._open_pack_folder(rp)),
+                    ("行为包（BP）", lambda: self._open_pack_folder(bp)),
+                ],
+            )
+            return
+        self._open_pack_folder(rp or bp)
+
+    def _open_pack_folder(self, pack: Path) -> None:
+        try:
+            open_folder(pack)
+        except Exception as exc:
+            error_toast(self.page, f"打开文件夹失败: {exc}")
 
     def _translate_target_lang(
         self, target: Path, texts: Path, code: str, lang: str

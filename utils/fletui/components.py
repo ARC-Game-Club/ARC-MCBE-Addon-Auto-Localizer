@@ -202,3 +202,32 @@ def confirm(
         actions_alignment=ft.MainAxisAlignment.END,
     )
     page.show_dialog(dlg)
+
+
+def choose(
+    page: ft.Page,
+    title: str,
+    options: list[tuple[str, Callable[[], None]]],
+    message: str = "",
+) -> None:
+    """多选一对话框：每个选项一个按钮，点击后关闭并执行对应回调。"""
+
+    def close(_=None):
+        page.pop_dialog()
+
+    actions = []
+    for label, fn in options:
+        def on_pick(_=None, fn=fn):
+            page.pop_dialog()
+            fn()
+        actions.append(ft.FilledTonalButton(label, on_click=on_pick))
+    actions.append(ft.TextButton("取消", on_click=close))
+
+    dlg = ft.AlertDialog(
+        modal=True,
+        title=ft.Text(title),
+        content=ft.Text(message) if message else None,
+        actions=actions,
+        actions_alignment=ft.MainAxisAlignment.END,
+    )
+    page.show_dialog(dlg)
