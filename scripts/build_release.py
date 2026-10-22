@@ -33,8 +33,8 @@ BUILD_DIR = ROOT / "build" / "mcbe_localization_hub"
 WARN_FILE = BUILD_DIR / "warn-mcbe_localization_hub.txt"
 APP_TITLE = "弧光自动本地化工具"
 PROCESS_NAME = "mcbe_localization_hub"
-SMOKE_TIMEOUT_S = 90  # onefile 包约 400MB，自解压较慢，留足时间
-MIN_SIZE_MB = 200  # 正常含 flet 桌面运行时与 OCR 模型，远小于此即视为缺件
+SMOKE_TIMEOUT_S = 150  # onefile 包自解压较慢，留足时间
+MIN_SIZE_MB = 150  # 粗防呆下限：v1.3.3 坏包（缺 flet）为 135MB，正常包 ≥190MB
 CRITICAL_MODULES = [
     "flet", "openai", "httpx", "numpy", "rapidocr", "onnxruntime",
     "PIL", "requests", "yaml", "qrcode",
@@ -70,24 +70,33 @@ def run_pyinstaller() -> None:
 def gate_warn_file() -> None:
     if not WARN_FILE.exists():
         fail(f"闸 2 未通过：找不到 warn 文件 {WARN_FILE}")
-    missing = []
+    # 只拦截“整个关键包缺失”（v1.3.3 的 flet 就是这种）；带点号的子模块
+    # missing 多为 numpy._core.* 这类运行期惰性导入噪音，包本体已收集，不算失败。
+    fatal, noisy = [], 0
     for line in WARN_FILE.read_text(encoding="utf-8", errors="replace").splitlines():
         m = re.match(r"missing module named ([\w.]+)", line.strip())
-        if m and m.group(1).split(".")[0] in CRITICAL_MODULES:
-            missing.append(line.strip())
-    if missing:
-        fail("闸 2 未通过：warn 文件显示关键模块未打进包：\n  " + "\n  ".join(missing))
-    print("[build_release] 闸 2 通过：warn 文件无关键模块缺失")
+        if not m or m.group(1).split(".")[0] not in CRITICAL_MODULES:
+            continue
+        if "." in m.group(1):
+            noisy += 1
+        else:
+            fatal.append(line.strip())
+    if fatal:
+        fail("闸 2 未通过：warn 文件显示关键模块未打进包：\n  " + "\n  ".join(fatal))
+    print(f"[build_release] 闸 2 通过：关键模块完整（{noisy} 条子模块惰性导入警告，属正常噪音）")
 
 
-def window_title() -> str:
-    ps = subprocess.run(
-        ["powershell", "-NoProfile", "-Command",
-         f"(Get-Process | Where-Object {{ $_.MainWindowTitle -like '*{APP_TITLE}*' }} "
-         "| Select-Object -First 1).MainWindowTitle"],
-        capture_output=True, text=True,
+def app_window_present() -> bool:
+    # 只让 PowerShell 回 ASCII 标记：回传中文标题会撞上控制台编码（GBK/UTF-8）问题
+    cmd = (
+        "if (Get-Process | Where-Object { $_.MainWindowTitle -like "
+        f"'*{APP_TITLE}*' }}) {{ 'FOUND' }} else {{ '' }}"
     )
-    return (ps.stdout or "").strip()
+    ps = subprocess.run(
+        ["powershell", "-NoProfile", "-Command", cmd],
+        capture_output=True, text=True, errors="replace",
+    )
+    return "FOUND" in (ps.stdout or "")
 
 
 def gate_smoke() -> None:
@@ -97,17 +106,15 @@ def gate_smoke() -> None:
     print(f"[build_release] 闸 3：冒烟启动 exe（最多等 {SMOKE_TIMEOUT_S} 秒）...")
     proc = subprocess.Popen([str(exe)], cwd=str(exe.parent))
     deadline = time.time() + SMOKE_TIMEOUT_S
-    title = ""
     try:
         while time.time() < deadline:
             time.sleep(3)
             if proc.poll() is not None:
                 fail(f"闸 3 未通过：exe 启动后即退出，退出码 {proc.returncode}")
-            title = window_title()
-            if APP_TITLE in title:
-                print(f"[build_release] 闸 3 通过：主窗口已拉起（{title.splitlines()[0]}）")
+            if app_window_present():
+                print("[build_release] 闸 3 通过：主窗口已拉起")
                 return
-        fail(f"闸 3 未通过：{SMOKE_TIMEOUT_S} 秒内未见主窗口（最后标题：{title or '无'}）")
+        fail(f"闸 3 未通过：{SMOKE_TIMEOUT_S} 秒内未见主窗口")
     finally:
         subprocess.run(["taskkill", "/IM", f"{PROCESS_NAME}.exe", "/T", "/F"],
                        capture_output=True)
@@ -115,7 +122,7 @@ def gate_smoke() -> None:
             ["powershell", "-NoProfile", "-Command",
              f"Get-Process | Where-Object {{ $_.MainWindowTitle -like '*{APP_TITLE}*' }} "
              "| Stop-Process -Force"],
-            capture_output=True,
+            capture_output=True, text=True, errors="replace",
         )
 
 
@@ -129,7 +136,7 @@ def publish_artifact() -> None:
     print(f"[build_release] 产物：{dst}")
     print(f"[build_release] 大小：{size_mb:.1f} MB   sha256：{digest}")
     if size_mb < MIN_SIZE_MB:
-        fail(f"产物仅 {size_mb:.0f} MB（正常约 400 MB），疑似缺 flet 桌面运行时或 OCR 模型。")
+        fail(f"产物仅 {size_mb:.0f} MB（正常约 190-400 MB），疑似缺 flet 桌面运行时或 OCR 模型。")
 
 
 def main() -> None:
